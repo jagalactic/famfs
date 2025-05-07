@@ -88,6 +88,7 @@ void famfs_dump_super(struct famfs_superblock *sb);
 int famfs_get_system_uuid(uuid_le *uuid_out);
 void famfs_print_uuid(const uuid_le *uuid);
 enum famfs_type famfs_get_kernel_type(int verbose);
+int split_at_comma(const char *input, char **left, char **right);
 
 /* famfs_yaml.c */
 #include <yaml.h>

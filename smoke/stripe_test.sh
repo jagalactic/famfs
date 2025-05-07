@@ -136,20 +136,25 @@ stripe_test_cp () {
     #
     # Check the files with the "remembered" seeds
     #
+    verify_args=""
     echo "Verifying files"
     loopct=0
     for file in "${files[@]}"; do
 	(( seed = BASE_SEED + loopct ))
-	echo -n "Verifying file: $file seed=$seed"
-	${CLI} verify -q -S "$seed" -f "$file"
-	if [[ $? -eq 0 ]]; then
-	    echo "...good"
-	else
-	    fail "Failed to verify $file (seed=$seed)"
-	fi
+	#echo -n "Verifying file: $file seed=$seed"
+	verify_args+="-m ${file},${seed} "
+
 	(( loopct++ ))
     done
-
+    ${CLI} verify ${verify_args}
+    rc="$?"
+    if [[ $rc -eq 0 ]]; then
+	echo "...good"
+    else
+	fail "Failed to verify $rc files (seed=$seed)"
+    fi
+    echo "rc=$rc"
+    
     echo "Created and copied $counter files"
     echo "Processed all successfully copied files."
 }
@@ -211,20 +216,24 @@ stripe_test () {
     #
     # Check the files with the "remembered" seeds
     #
-    echo "Verifying files"
+    echo "verifying files"
     # Cat each file to /dev/null
     loopct=0
+    verify_args=""
     for file in "${files[@]}"; do
 	(( seed = BASE_SEED + loopct ))
-	echo -n "Verifying file: $file seed=$seed"
-	${CLI} verify -q -S "$seed" -f "$file"
-	if [[ $? -eq 0 ]]; then
-	    echo "...good"
-	else
-	    fail "Failed to verify $file (seed=$seed)"
-	fi
+	echo -n "verifying file: $file seed=$seed"
+	verify_args+="-m ${file},${seed} "
+	
 	(( loopct++ ))
     done
+    ${CLI} verify ${verify_args}
+    rc="$?"
+    if [[ $rc -eq 0 ]]; then
+	echo "...good"
+    else
+	fail "Failed to verify $rc files (seed=$seed)"
+    fi
 
     echo
     echo "Unmount and remount to test logplay for interleaved files"
@@ -241,17 +250,22 @@ stripe_test () {
     echo "Verifying files post unmount/remount"
     # Cat each file to /dev/null
     loopct=0
+    verify_args=""
     for file in "${files[@]}"; do
 	(( seed = BASE_SEED + loopct ))
 	echo -n "re-verifying file: $file seed=$seed"
-	${CLI} verify -q -S "$seed" -f "$file"
-	if [[ $? -eq 0 ]]; then
-	    echo "...good"
-	else
-	    fail "Failed to verify $file after unmount/remount (seed=$seed)"
-	fi
+	verify_args+="-m ${file},${seed} "
+
 	(( loopct++ ))
     done
+
+    ${CLI} verify ${verify_args}
+    rc="$?"
+    if [[ $rc -eq 0 ]]; then
+	echo "...good"
+    else
+	fail "Failed to verify $rc files (seed=$seed)"
+    fi
 
     echo "Processed all successfully created files."
 }

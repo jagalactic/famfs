@@ -30,6 +30,7 @@
 #include "famfs_lib.h"
 #include "random_buffer.h"
 #include "mu_mem.h"
+#include "thpool.h"
 
 /* Global option related stuff */
 
@@ -1496,28 +1497,125 @@ famfs_verify_usage(int   argc,
 	       "    %s verify -S <seed> -f <filename>\n"
 	       "\n"
 	       "Arguments:\n"
-	       "    -?                        - Print this message\n"
-	       "    -f|--filename <filename>  - Required file path\n"
-	       "    -S|--seed <random-seed>   - Required seed for data verification\n"
+	       "    -?                           - Print this message\n"
+	       "    -f|--filename <filename>     - Required file path\n"
+	       "    -S|--seed <random-seed>      - Required seed for data verification\n"
+	       "    -m|--multi <filename>,<seed> - Verify multiple files in parallel\n"
+	       "                                   (specify with multiple instances of this arg)\n"
+	       "                                   (cannot combine with separate args)\n"
+	       "    -t|--threadct <nthreads>     - Thread count in --multi mode\n"
 	       "\n", progname);
+}
+
+struct multi_verify {
+	char *fname;
+	s64 seed;
+	int quiet;
+	int rc;
+};
+
+static int
+verify_one(const char *filename, s64 seed, int quiet)
+{
+	size_t fsize;
+	void *addr;
+	char *buf;
+	int fd;
+	s64 rc;
+
+	if (filename == NULL) {
+		fprintf(stderr, "Must supply filename\n");
+		return 1;
+	}
+	if (!seed) {
+		fprintf(stderr, "Must specify random seed to verify file data\n");
+		return 1;
+	}
+	fd = open(filename, O_RDWR, 0);
+	if (fd < 0) {
+		fprintf(stderr, "open %s failed; fd %d errno %d\n",
+			filename, fd, errno);
+		return 1;
+	}
+
+	addr = famfs_mmap_whole_file(filename, 0, &fsize);
+	if (!addr) {
+		fprintf(stderr, "%s: randomize mmap failed\n", __func__);
+		return 1;
+	}
+	invalidate_processor_cache(addr, fsize);
+	buf = (char *)addr;
+	rc = validate_random_buffer(buf, fsize, seed);
+	if (rc == -1) {
+		if (!quiet)
+			printf("Success: verified %ld bytes in file %s\n", fsize, filename);
+	} else {
+		fprintf(stderr, "Verify fail at offset %lld of %ld bytes\n", rc, fsize);
+		return 1;
+	}
+	return 0;
+}
+
+static void
+threaded_verify(void *arg)
+{
+	struct multi_verify *mv = arg;
+
+	assert(mv);
+	mv->rc = verify_one(mv->fname, mv->seed, mv->quiet);
+}
+
+static int
+verify_multi(
+	const struct multi_verify *mv,
+	int multi_count,
+	int threadct,
+	int quiet)
+{
+	threadpool thp;
+	int errs = 0;
+	int i;
+
+	if (threadct <= 0 || threadct > 256) {
+		fprintf(stderr, "%s: bad threadct: %d\n",
+			__func__, threadct);
+		return -1;
+	}
+
+	thp = thpool_init(threadct);
+	for (i = 0; i < multi_count; i++)
+		thpool_add_work(thp, threaded_verify, (void *)&mv[i]);
+
+	thpool_wait(thp);
+	thpool_destroy(thp);
+
+	for (i = 0; i < multi_count; i++)
+		errs += mv[i].rc;
+
+	printf("Verify complete for %d files with %d errs\n",
+	       multi_count, errs);
+	return errs;
 }
 
 int
 do_famfs_cli_verify(int argc, char *argv[])
 {
+	struct multi_verify *mv = NULL;
 	char *filename = NULL;
-	size_t fsize = 0;
+	int multi_count = 0;
+	int threadct = 4;
 	int quiet = 0;
 	s64 seed = 0;
-	void *addr;
 	s64 rc = 0;
-	char *buf;
-	int c, fd;
+	int c;
+	int i;
 
 	struct option verify_options[] = {
 		/* These options set a */
 		{"seed",        required_argument,             0,  'S'},
 		{"filename",    required_argument,             0,  'f'},
+		{"multi",       required_argument,             0,  'm'},
+		{"threadct",    required_argument,             0,  't'},
 		{"quiet",       no_argument,                   0,  'q'},
 		{0, 0, 0, 0}
 	};
@@ -1526,17 +1624,57 @@ do_famfs_cli_verify(int argc, char *argv[])
 	 * to return -1 when it sees something that is not recognized option
 	 * (e.g. the command that will mux us off to the command handlers
 	 */
-	while ((c = getopt_long(argc, argv, "+f:S:qh?",
+	while ((c = getopt_long(argc, argv, "+f:S:m:t:qh?",
 				verify_options, &optind)) != EOF) {
 
 		switch (c) {
 
 		case 'S':
 			seed = strtoull(optarg, 0, 0);
+			if (mv) {
+				fprintf(stderr, "%s: -S and -m incompatible\n",
+					__func__);
+				goto multi_err;
+			}
 			break;
 
-		case 'f': {
+		case 'f':
 			filename = optarg;
+			if (mv) {
+				fprintf(stderr, "%s: -f and -m incompatible\n",
+					__func__);
+				goto multi_err;
+			}
+			break;
+		case 't':
+			threadct = strtoul(optarg, 0, 0);
+			break;
+		case 'm': {
+			char *left;
+			char *right;
+
+			if (seed || filename) {
+				fprintf(stderr, "%s: -S|-f and -m incompatible\n",
+					__func__);
+				goto multi_err;
+			}
+			if (!mv)
+				mv = calloc(argc, sizeof(*mv));
+
+			if (split_at_comma(optarg, &left, &right)) {
+				free(left);
+				free(right);
+				fprintf(stderr,
+					"%s: bad multi arg(%d): %s\n",
+					__func__, multi_count, optarg);
+				goto multi_err;
+			}
+				
+			mv[multi_count].fname = left;
+			mv[multi_count].seed = strtoull(right, 0, 0);
+			mv[multi_count].quiet = quiet;
+			multi_count++;
+			free(right); /* left is held by the mv entry */
 			break;
 		}
 		case 'q':
@@ -1550,24 +1688,30 @@ do_famfs_cli_verify(int argc, char *argv[])
 		}
 	}
 
+#if 1
+	if (!mv)
+		rc = verify_one(filename, seed, quiet);
+	else
+		rc = verify_multi(mv, multi_count, threadct, quiet);
+#else
 	if (filename == NULL) {
 		fprintf(stderr, "Must supply filename\n");
-		exit(-1);
+		return -1;
 	}
 	if (!seed) {
 		fprintf(stderr, "Must specify random seed to verify file data\n");
-		exit(-1);
+		return -1;
 	}
 	fd = open(filename, O_RDWR, 0);
 	if (fd < 0) {
 		fprintf(stderr, "open %s failed; rc %lld errno %d\n", filename, rc, errno);
-		exit(-1);
+		return -1;
 	}
 
 	addr = famfs_mmap_whole_file(filename, 0, &fsize);
 	if (!addr) {
 		fprintf(stderr, "%s: randomize mmap failed\n", __func__);
-		exit(-1);
+		return -1;
 	}
 	invalidate_processor_cache(addr, fsize);
 	buf = (char *)addr;
@@ -1577,10 +1721,18 @@ do_famfs_cli_verify(int argc, char *argv[])
 			printf("Success: verified %ld bytes in file %s\n", fsize, filename);
 	} else {
 		fprintf(stderr, "Verify fail at offset %lld of %ld bytes\n", rc, fsize);
-		exit(-1);
+		return -1;
 	}
+#endif
 
-	return 0;
+	return rc;
+
+multi_err:
+	for (i = 0; i < multi_count; i++) {
+		free(mv[i].fname);
+		free(&mv[i]);
+	}
+	exit(-1);
 }
 
 /********************************************************************/

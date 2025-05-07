@@ -121,6 +121,22 @@ ${CLI} verify -S 1 -f $MPT/test1 || fail "verify 1 after multi creat"
 ${CLI} verify -S 2 -f $MPT/test2 || fail "verify 2 after multi creat"
 ${CLI} verify -S 3 -f $MPT/test3 || fail "verify 3 after multi creat"
 
+${CLI} verify -S 99 -f $MPT/test1 && fail "verify with bad seed should fail"
+${CLI} verify -m "$MPT/test1,1" || fail "verify --multi should succeed"
+${CLI} verify -m "$MPT/test1,2" && fail "verify --multi w/bad seed should fail"
+
+${CLI} verify --multi "$MPT/test1,1" --multi "$MPT/test2,2" --multi "$MPT/test3,3" \
+    || fail "verify multi with good seeds should succeed"
+${CLI} verify --multi "$MPT/test1,9" --multi "$MPT/test2,2" --multi "$MPT/test3,3" \
+    && fail "verify multi with any bad seeds should fail"
+#bad thread counts
+${CLI} verify --threadct 0 --multi "$MPT/test1,1" --multi "$MPT/test2,2" --multi "$MPT/test3,3" \
+    && fail "verify multi with good seeds and 0 thread should fail"
+${CLI} verify --threadct 257 --multi "$MPT/test1,1" --multi "$MPT/test2,2" --multi "$MPT/test3,3" \
+    && fail "verify multi with good seeds and 257 thread should fail"
+${CLI} verify -t 999 --multi "$MPT/test1,9" --multi "$MPT/test2,2" --multi "$MPT/test3,3" \
+    && fail "verify multi with any bad seeds and bad threadct fail"
+
 # Create same file should fail unless we're randomizing it
 ${CLI} creat -r -s 4096 -S 99 $MPT/test1 || fail "Create to re-init existing file should succeed"
 ${CLI} creat -s 4096 $MPT/test1  || fail "Recreate with same size should succeed"
