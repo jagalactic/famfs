@@ -1148,7 +1148,12 @@ famfs_creat_usage(int   argc,
 	       "    -u|--uid <int uid>       - Default is caller's uid\n"
 	       "    -g|--gid <int gid>       - Default is caller's gid\n"
 	       "    -v|--verbose             - Print debugging output while executing the command\n"
+	       "Multi-file create:\n"
+	       "    -M|--multi <fname>,<size>[,<seed>]\n"
+	       "                             - This arg can repeat; will create each fiel\n"
+	       "                               if seed specified, will randomize\n"
 	       "\n"
+	       "Interleave arguments:\n"
 	       "    -C|--chunksize <size>    - Size of chunks for interleaved allocation\n"
 	       "                               (default=0); non-zero causes interleaved allocation.\n"
 	       "    -N|--nstrips <n>         - Number of strips to use in interleaved allocations.\n"
@@ -1162,14 +1167,23 @@ famfs_creat_usage(int   argc,
 	       progname, progname, progname);
 }
 
+struct multi_creat {
+	char *fname;
+	size_t size;
+	s64 seed;
+	int rc;
+};
+
 int
 do_famfs_cli_creat(int argc, char *argv[])
 {
 	struct famfs_interleave_param interleave_param = { 0 };
+	struct multi_creat *mc = NULL;
 	uid_t uid = geteuid();
 	gid_t gid = getegid();
 	char *filename = NULL;
 	mode_t current_umask;
+	int multi_count = 0;
 	mode_t mode = 0644;
 	int set_stripe = 0;
 	int randomize = 0;
@@ -1191,6 +1205,7 @@ do_famfs_cli_creat(int argc, char *argv[])
 		{"gid",         required_argument,             0,  'g'},
 		{"verbose",     no_argument,                   0,  'v'},
 
+		{"multi",       required_argument,             0,  'M'},
 		{"chunksize",   required_argument,             0,  'C'},
 		{"mnstrips",    required_argument,             0,  'N'},
 		{"nbuckets",    required_argument,             0,  'B'},
@@ -1201,7 +1216,7 @@ do_famfs_cli_creat(int argc, char *argv[])
 	 * to return -1 when it sees something that is not recognized option
 	 * (e.g. the command that will mux us off to the command handlers
 	 */
-	while ((c = getopt_long(argc, argv, "+s:S:m:u:g:rC:N:B:h?v",
+	while ((c = getopt_long(argc, argv, "+s:S:m:u:g:rC:N:B:M:h?v",
 				creat_options, &optind)) != EOF) {
 		char *endptr;
 
@@ -1258,6 +1273,39 @@ do_famfs_cli_creat(int argc, char *argv[])
 				interleave_param.nbuckets *= mult;
 			break;
 
+		case 'M': {
+			char **strings;
+			int nstrings;
+
+			if (seed || filename) {
+				fprintf(stderr, "%s: -S|-f and -m incompatible\n",
+					__func__);
+				return -1;
+			}
+			if (!mc)
+				mc = calloc(argc, sizeof(*mc));
+
+			strings = tokenize_string(optarg, ",", &nstrings);
+			if (!nstrings || nstrings < 2 || nstrings > 3) {
+				free_string_list(strings, nstrings);
+				fprintf(stderr,
+					"%s: bad multi arg(%d): %s\n",
+					__func__, multi_count, optarg);
+				return -1;
+			}
+
+			/* We know nstrings is in the range 2..3 inclusive */
+			mc[multi_count].fname = strdup(strings[0]);
+			mc[multi_count].size = strtoull(strings[1], 0, 0);
+			if (nstrings == 3)
+				mc[multi_count].seed = strtoull(strings[2],
+								0, 0);
+
+			free_string_list(strings, nstrings);
+			multi_count++;
+			break;
+		}
+
 		case 'v':
 			verbose++;
 			break;
@@ -1279,9 +1327,10 @@ do_famfs_cli_creat(int argc, char *argv[])
 		return -1;
 	}
 	if (interleave_param.nstrips > FAMFS_MAX_SIMPLE_EXTENTS) {
-		fprintf(stderr, "famfs creat error: Number of strips(%lld) should not be "
-				"more than maximum allowed strips(%d) \n",
-			       interleave_param.nstrips, FAMFS_MAX_SIMPLE_EXTENTS);
+		fprintf(stderr,
+			"famfs creat error: Number of strips(%lld) should not be "
+			"more than maximum allowed strips(%d) \n",
+			interleave_param.nstrips, FAMFS_MAX_SIMPLE_EXTENTS);
 		return -1;
 	}
 
@@ -1650,8 +1699,8 @@ do_famfs_cli_verify(int argc, char *argv[])
 			threadct = strtoul(optarg, 0, 0);
 			break;
 		case 'm': {
-			char *left;
-			char *right;
+			char **strings;
+			int nstrings;
 
 			if (seed || filename) {
 				fprintf(stderr, "%s: -S|-f and -m incompatible\n",
@@ -1661,20 +1710,21 @@ do_famfs_cli_verify(int argc, char *argv[])
 			if (!mv)
 				mv = calloc(argc, sizeof(*mv));
 
-			if (split_at_comma(optarg, &left, &right)) {
-				free(left);
-				free(right);
+			strings = tokenize_string(optarg, ",", &nstrings);
+			if (!nstrings || nstrings !=2) {
+				free_string_list(strings, nstrings);
 				fprintf(stderr,
 					"%s: bad multi arg(%d): %s\n",
 					__func__, multi_count, optarg);
 				goto multi_err;
 			}
 				
-			mv[multi_count].fname = left;
-			mv[multi_count].seed = strtoull(right, 0, 0);
+			mv[multi_count].fname = strdup(strings[0]);
+			mv[multi_count].seed = strtoull(strings[1], 0, 0);
 			mv[multi_count].quiet = quiet;
 			multi_count++;
-			free(right); /* left is held by the mv entry */
+
+			free_string_list(strings, nstrings);
 			break;
 		}
 		case 'q':
@@ -1726,13 +1776,15 @@ do_famfs_cli_verify(int argc, char *argv[])
 #endif
 
 	return rc;
-
 multi_err:
-	for (i = 0; i < multi_count; i++) {
-		free(mv[i].fname);
-		free(&mv[i]);
+	if (mv) {
+		for (i = 0; i < multi_count; i++)
+			if (mv->fname)
+				free(mv->fname);
+		free(mv);
 	}
-	exit(-1);
+	return -1;
+
 }
 
 /********************************************************************/

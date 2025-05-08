@@ -406,12 +406,6 @@ famfs_get_kernel_type(int verbose)
 	return NOT_FAMFS;
 }
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
-
 /**
  * check_file_exists()
  *
@@ -446,10 +440,6 @@ int check_file_exists(
 	return -1;
 }
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-
 /* Splits `input` into `left` and `right` at the first comma.
  * Returns 0 on success, -1 if no comma is found.
  * The caller is responsible for freeing *left and *right.
@@ -482,4 +472,76 @@ int split_at_comma(const char *input, char **left, char **right)
 	strcpy(*right, comma + 1);
 
 	return 0;
+}
+
+void free_string_list(char **strings, int nstrings)
+{
+	int i;
+
+	if (!strings)
+		return;
+
+	for (i = 0; i < nstrings; i++)
+		if (strings[i])
+			free(strings[i]);
+
+	free(strings);
+}
+
+/*
+ * Splits a comma-separated string (no whitespace) into an array of strings.
+ * - input: input string to split
+ * - out_count: receives the number of tokens
+ * Returns: array of strings (char **), or NULL on failure.
+ * Caller must free each string and the array itself.
+ */
+char **tokenize_string(const char *input, const char *delimiter, int *out_count)
+{
+	char *copy;
+	char *token;
+	char **result;
+	const char *p;
+	int count;
+	int i = 0;
+	int j;
+
+	assert(strlen(delimiter) == 1);
+
+	if (input == NULL || out_count == NULL)
+		return NULL;
+
+	copy = strdup(input);
+	if (copy == NULL)
+		return NULL;
+
+	/* get a comma-count */
+	count = 1;
+	for (p = input; *p != '\0'; ++p) {
+		if (*p == ',')
+			count++;
+	}
+
+	result = (char **) malloc(count * sizeof(char *));
+	if (result == NULL) {
+		free(copy);
+		return NULL;
+	}
+
+	token = strtok(copy, delimiter);
+	while (token != NULL && i < count) {
+		result[i] = strdup(token);
+		if (result[i] == NULL) {
+			for (j = 0; j < i; j++)
+				free(result[j]);
+			free(result);
+			free(copy);
+			return NULL;
+		}
+		i++;
+		token = strtok(NULL, delimiter);
+	}
+
+	free(copy);
+	*out_count = i;
+	return result;
 }

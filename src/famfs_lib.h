@@ -89,6 +89,10 @@ int famfs_get_system_uuid(uuid_le *uuid_out);
 void famfs_print_uuid(const uuid_le *uuid);
 enum famfs_type famfs_get_kernel_type(int verbose);
 int split_at_comma(const char *input, char **left, char **right);
+//int split_two_commas(const char *input, char **out1, char **out2, char **out3);
+void free_string_list(char **strings, int nstrings);
+char **tokenize_string(const char *input, const char *delimiter, int *out_count);
+
 
 /* famfs_yaml.c */
 #include <yaml.h>
