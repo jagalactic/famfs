@@ -230,15 +230,16 @@ stripe_test () {
     echo "verifying files"
     # Cat each file to /dev/null
     loopct=0
-    verify_args=""
+    verify_args=()
     for file in "${files[@]}"; do
 	(( seed = BASE_SEED + loopct ))
 	echo -n "verifying file: $file seed=$seed"
-	verify_args+="-m ${file},${seed} "
+	verify_args+=("-m")
+	verify_args+=("${file},${seed} ")
 	
 	(( loopct++ ))
     done
-    ${CLI} verify ${verify_args}
+    ${CLI} verify ${verify_args[@]}
     rc="$?"
     if [[ $rc -eq 0 ]]; then
 	echo "...good"
@@ -261,16 +262,17 @@ stripe_test () {
     echo "Verifying files post unmount/remount"
     # Cat each file to /dev/null
     loopct=0
-    verify_args=""
+    verify_args=()
     for file in "${files[@]}"; do
 	(( seed = BASE_SEED + loopct ))
 	echo -n "re-verifying file: $file seed=$seed"
-	verify_args+="-m ${file},${seed} "
+	verify_args+=("-m")
+	verify_args+=("${file},${seed} ")
 
 	(( loopct++ ))
     done
 
-    ${CLI} verify ${verify_args}
+    ${CLI} verify ${verify_args[@]}
     rc="$?"
     if [[ $rc -eq 0 ]]; then
 	echo "...good"

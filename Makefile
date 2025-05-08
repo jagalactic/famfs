@@ -53,6 +53,7 @@ coverage:	cmake-modules threadpool
 	mkdir -p coverage;
 	$(MAKE) libfuse BDIR="coverage"
 	cd coverage; cmake -DCMAKE_BUILD_TYPE=Debug -DFAMFS_TEST_COVERAGE="yes" ..; $(MAKE)
+#	cd coverage; cmake -DCODE_COVERAGE_VERBOSE=ON -DCMAKE_BUILD_TYPE=Debug -DFAMFS_TEST_COVERAGE="yes" -S . -B build ..; $(MAKE)
 
 # Run the coverage tests
 coverage_test:	coverage

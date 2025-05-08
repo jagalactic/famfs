@@ -102,7 +102,9 @@ ${CLI} creat                              && fail "creat with no args should fai
 ${CLI} creat -r -S 1 $MPT/test1           && fail "creat without size should fail"
 ${CLI} creat -S -s 10 $MPT/badf           && fail "creat with -S but no -r should fail"
 ${CLI} creat -r -s 4096 -S 1 $MPT/test1   || fail "creat test1"
-${CLI} create $MPT/.meta && fail "creat an existing directory should fail"
+${CLI} creat $MPT/.meta && fail "creat an existing directory should fail"
+${CLI} creat -S 1 -r -m "$MPT/zork,4K,1" && fail "multi and single mode should fail"
+${CLI} creat -t 1000 -m "$MPT/zork,4K,1" && fail "threadct=1000 should fail"
 
 ${CLI} verify -h                 || fail "verify -h should succeed"
 ${CLI} verify                    && fail "verify with no args should fail"
