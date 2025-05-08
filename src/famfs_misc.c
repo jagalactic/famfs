@@ -440,40 +440,6 @@ int check_file_exists(
 	return -1;
 }
 
-/* Splits `input` into `left` and `right` at the first comma.
- * Returns 0 on success, -1 if no comma is found.
- * The caller is responsible for freeing *left and *right.
- */
-int split_at_comma(const char *input, char **left, char **right)
-{
-	const char *comma;
-	size_t left_len;
-	size_t right_len;
-
-	comma = strchr(input, ',');
-	if (!comma)
-		return -1;  // No comma found
-
-	left_len = comma - input;
-	right_len = strlen(comma + 1);
-
-	*left = malloc(left_len + 1);
-	*right = malloc(right_len + 1);
-
-	if (!*left || !*right) {
-		free(*left);
-		free(*right);
-		return -1; // Allocation failed
-	}
-
-	strncpy(*left, input, left_len);
-	(*left)[left_len] = '\0';
-
-	strcpy(*right, comma + 1);
-
-	return 0;
-}
-
 void free_string_list(char **strings, int nstrings)
 {
 	int i;

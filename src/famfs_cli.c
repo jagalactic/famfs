@@ -1126,7 +1126,7 @@ famfs_creat_usage(int   argc,
 	printf("\n"
 	       "famfs creat: Create a file in a famfs file system\n"
 	       "\n"
-	       "This testing tool allocates and creates a file of a specified size.\n"
+	       "This tool allocates and creates files.\n"
 	       "\n"
 	       "Create a file backed by free space:\n"
 	       "    %s creat -s <size> <filename>\n"
@@ -1137,21 +1137,28 @@ famfs_creat_usage(int   argc,
 	       "Create a file backed by free space, with octal mode 0644:\n"
 	       "    %s creat -s <size> -m 0644 <filename>\n"
 	       "\n"
+	       "Create two files randomized with separte seeds:\n"
+	       "    %s creat --multi file1,256M,42 --multi file2,256M,43\n"
+	       "\n"
+	       "Create two non-randomized files:\n"
+	       "    %s creat --multi file1,256M --multi file2,256M\n"
+	       "\n"
 	       "Arguments:\n"
 	       "    -?                       - Print this message\n"
-	       "    -s|--size <size>[kKmMgG] - Required file size\n"
-	       "    -S|--seed <random-seed>  - Optional seed for randomization\n"
-	       "    -r|--randomize           - Optional - will randomize with provided seed\n"
 	       "    -m|--mode <octal-mode>   - Default is 0644\n"
 	       "                               Note: mode is ored with ~umask, so the actual mode\n"
 	       "                               may be less permissive; see umask for more info\n"
 	       "    -u|--uid <int uid>       - Default is caller's uid\n"
 	       "    -g|--gid <int gid>       - Default is caller's gid\n"
 	       "    -v|--verbose             - Print debugging output while executing the command\n"
-	       "Multi-file create:\n"
+	       "Single-file create: (cannot mix with multi-create)\n"
+	       "    -s|--size <size>[kKmMgG] - Required file size\n"
+	       "    -S|--seed <random-seed>  - Optional seed for randomization\n"
+	       "    -r|--randomize           - Optional - will randomize with provided seed\n"
+	       "Multi-file create: (cannot mix with single-create)\n"
 	       "    -M|--multi <fname>,<size>[,<seed>]\n"
 	       "                             - This arg can repeat; will create each fiel\n"
-	       "                               if seed specified, will randomize\n"
+	       "                               if non-zero seed specified, will randomize\n"
 	       "\n"
 	       "Interleave arguments:\n"
 	       "    -C|--chunksize <size>    - Size of chunks for interleaved allocation\n"
@@ -1164,15 +1171,209 @@ famfs_creat_usage(int   argc,
 	       "      randomized based on the seed, making it possible to use the 'famfs verify'\n"
 	       "      command later to validate the contents of the file\n"
 	       "\n",
-	       progname, progname, progname);
+	       progname, progname, progname, progname, progname);
 }
 
 struct multi_creat {
 	char *fname;
-	size_t size;
+	size_t fsize;
 	s64 seed;
+	int verbose;
+	/* outputs */
+	int created;
 	int rc;
 };
+
+
+static int
+randomize_one(
+	const char *filename,
+	size_t fsize,
+	s64 seed,
+	int verbose)
+{
+	size_t fsize_out;
+	void *addr;
+	char *buf;
+
+	addr = famfs_mmap_whole_file(filename, 0, &fsize_out);
+	if (!addr) {
+		fprintf(stderr, "%s: randomize mmap failed\n",
+			__func__);
+		return -1;
+	}
+	if (fsize && fsize != fsize_out) {
+		fprintf(stderr, "%s: fsize horky %ld / %ld\n",
+			__func__, fsize, fsize_out);
+		return -1;
+	}
+	buf = (char *)addr;
+
+	if (!seed)
+		printf("Randomizing buffer with random seed\n");
+	randomize_buffer(buf, fsize, seed);
+	flush_processor_cache(buf, fsize);
+	return 0;
+}
+
+static int
+creat_one(
+	const char *filename,
+	size_t fsize,
+	struct famfs_interleave_param *ip,
+	mode_t mode,
+	uid_t uid,
+	gid_t gid,
+	int verbose,
+	int *created /* output */)
+{
+	struct stat st;
+	int rc;
+	int fd;
+
+	rc = stat(filename, &st);
+	if (rc == 0) {
+		enum famfs_type ftype;
+
+		if ((st.st_mode & S_IFMT) != S_IFREG) {
+			fprintf(stderr, "%s: Error: file %s exists "
+				"and is not a regular file\n",
+				__func__, filename);
+			return -1;
+		}
+
+		if ((ftype = file_is_famfs(filename)) == NOT_FAMFS) {
+			fprintf(stderr,
+				"%s: Error file %s is not in famfs\n",
+				__func__, filename);
+			return -1;
+		}
+
+		/* If the file exists and it's the right size, this
+		 * becomes a nop; if the file is the wrong size, it's a fail
+		 */
+		if (fsize && st.st_size != fsize) {
+			fprintf(stderr, "%s: Error: file %s exists "
+				"and is not the same size\n",
+				__func__, filename);
+			return -1;
+		} else {
+			fsize = st.st_size;
+		}
+		if (verbose)
+			printf("%s: re-create is nop\n", __func__);
+
+		if (created)
+			*created = 0;
+
+	} else if (rc < 0) {
+		mode_t current_umask;
+		if (!fsize) {
+			fprintf(stderr, "%s: Error: new file size=zero\n",
+				__func__);
+			return -1;
+		}
+
+		/* This is horky, but OK for the cli */
+		current_umask = umask(0022);
+		umask(current_umask);
+		mode &= ~(current_umask);
+		fd = famfs_mkfile(filename, mode, uid, gid, fsize, ip, verbose);
+		if (fd < 0) {
+			fprintf(stderr, "%s: failed to create file %s\n",
+				__func__, filename);
+			if (created)
+				*created = 0;
+			return -1;
+		}
+		if (created)
+			*created = 1;
+	}
+	if (fd)
+		close(fd);
+	return 0;
+}
+
+static int
+creat_multi(
+	struct multi_creat *mc,
+	int multi_count,
+	int threadct,
+	struct famfs_interleave_param *ip,
+	mode_t mode,
+	uid_t uid,
+	gid_t gid,
+	int verbose)
+{
+	int ncreated = 0;
+	int errs = 0;
+	int i;
+
+	for (i = 0; i < multi_count; i++) {
+		mc[i].rc = creat_one(mc[i].fname, mc[i].fsize, ip,
+				     mode, uid, gid, verbose, &mc[i].created);
+	}
+
+	for (i = 0; i < multi_count; i++) {
+		if (mc[i].created)
+			ncreated++;
+		if (mc[i].rc)
+			errs ++;
+	}
+
+	printf("Create complete for %d of %d files with %d errs\n",
+	       ncreated, multi_count, errs);
+	return errs;
+
+}
+
+static void
+threaded_randomize(void *arg)
+{
+	struct multi_creat *mc = arg;
+
+	assert(mc);
+	mc->rc = randomize_one(mc->fname, mc->fsize, mc->seed, mc->verbose);
+}
+
+
+static int
+randomize_multi(
+	struct multi_creat *mc,
+	int multi_count,
+	int threadct,
+	int verbose)
+{
+	int randomize_ct;
+	threadpool thp;
+	int errs = 0;
+	int i;
+
+	if (threadct <= 0 || threadct > 256) {
+		fprintf(stderr, "%s: bad threadct: %d\n",
+			__func__, threadct);
+		return -1;
+	}
+
+	thp = thpool_init(threadct);
+	for (i = 0; i < multi_count; i++)
+		thpool_add_work(thp, threaded_randomize, (void *)&mc[i]);
+
+	thpool_wait(thp);
+	thpool_destroy(thp);
+
+	for (i = 0; i < multi_count; i++) {
+		if (mc[i].seed)
+			randomize_ct++;
+		if (mc[i].rc)
+			errs ++;
+	}
+
+	printf("Randomize complete for %d of %d files with %d errs\n",
+	       randomize_ct, multi_count, errs);
+	return errs;
+
+}
 
 int
 do_famfs_cli_creat(int argc, char *argv[])
@@ -1182,18 +1383,17 @@ do_famfs_cli_creat(int argc, char *argv[])
 	uid_t uid = geteuid();
 	gid_t gid = getegid();
 	char *filename = NULL;
-	mode_t current_umask;
 	int multi_count = 0;
 	mode_t mode = 0644;
 	int set_stripe = 0;
 	int randomize = 0;
 	int verbose = 0;
 	size_t fsize = 0;
-	struct stat st;
 	s64 seed = 0;
-	int fd = 0;
-	int c, rc;
+	int rc = 0;
 	s64 mult;
+	int c;
+	int i;
 
 	struct option creat_options[] = {
 		/* These options set a flag. */
@@ -1222,6 +1422,7 @@ do_famfs_cli_creat(int argc, char *argv[])
 
 		switch (c) {
 
+			/* Single-create options */
 		case 's':
 			fsize = strtoull(optarg, &endptr, 0);
 			mult = get_multiplier(endptr);
@@ -1233,6 +1434,11 @@ do_famfs_cli_creat(int argc, char *argv[])
 			seed = strtoull(optarg, 0, 0);
 			break;
 
+		case 'r':
+			randomize++;
+			break;
+
+			/* General options */
 		case 'm':
 			mode = strtol(optarg, 0, 8); /* Must be valid octal */
 			break;
@@ -1243,10 +1449,6 @@ do_famfs_cli_creat(int argc, char *argv[])
 
 		case 'g':
 			gid = strtol(optarg, 0, 0);
-			break;
-
-		case 'r':
-			randomize++;
 			break;
 
 		case 'C':
@@ -1272,7 +1474,7 @@ do_famfs_cli_creat(int argc, char *argv[])
 			if (mult > 0)
 				interleave_param.nbuckets *= mult;
 			break;
-
+			/* Multi-creat options */
 		case 'M': {
 			char **strings;
 			int nstrings;
@@ -1280,7 +1482,7 @@ do_famfs_cli_creat(int argc, char *argv[])
 			if (seed || filename) {
 				fprintf(stderr, "%s: -S|-f and -m incompatible\n",
 					__func__);
-				return -1;
+				goto multi_err;
 			}
 			if (!mc)
 				mc = calloc(argc, sizeof(*mc));
@@ -1291,12 +1493,12 @@ do_famfs_cli_creat(int argc, char *argv[])
 				fprintf(stderr,
 					"%s: bad multi arg(%d): %s\n",
 					__func__, multi_count, optarg);
-				return -1;
+				goto multi_err;
 			}
 
 			/* We know nstrings is in the range 2..3 inclusive */
 			mc[multi_count].fname = strdup(strings[0]);
-			mc[multi_count].size = strtoull(strings[1], 0, 0);
+			mc[multi_count].fsize = strtoull(strings[1], 0, 0);
 			if (nstrings == 3)
 				mc[multi_count].seed = strtoull(strings[2],
 								0, 0);
@@ -1334,7 +1536,23 @@ do_famfs_cli_creat(int argc, char *argv[])
 		return -1;
 	}
 
-	filename = argv[optind++];
+#if 1
+	if (!mc) {
+		filename = argv[optind++];
+		rc = creat_one(filename, fsize,
+			       (set_stripe) ? & interleave_param : NULL,
+			       mode, uid, gid, verbose, NULL);
+		if (!rc)
+			rc = randomize_one(filename, fsize, seed, verbose);
+	} else {
+		rc = creat_multi(mc, multi_count, 4 /* XXX */, 
+				 (set_stripe) ? & interleave_param : NULL,
+				 mode, uid, gid, verbose);
+		if (!rc)
+			rc = randomize_multi(mc, multi_count,
+					     8 /* XXX */, verbose);
+	}
+#else
 
 	rc = stat(filename, &st);
 	if (rc == 0) {
@@ -1434,7 +1652,16 @@ do_famfs_cli_creat(int argc, char *argv[])
 
 	if (fd)
 		close(fd);
-	return 0;
+#endif
+	return rc;
+multi_err:
+	if (mc) {
+		for (i = 0; i < multi_count; i++)
+			if (mc->fname)
+				free(mc->fname);
+		free(mc);
+	}
+	return -1;
 }
 
 /********************************************************************/
@@ -1639,7 +1866,8 @@ verify_multi(
 	thpool_destroy(thp);
 
 	for (i = 0; i < multi_count; i++)
-		errs += mv[i].rc;
+		if (mv[i].rc)
+			errs++;
 
 	printf("Verify complete for %d files with %d errs\n",
 	       multi_count, errs);
