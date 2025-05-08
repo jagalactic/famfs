@@ -1492,8 +1492,10 @@ do_famfs_cli_creat(int argc, char *argv[])
 			if (!nstrings || nstrings < 2 || nstrings > 3) {
 				free_string_list(strings, nstrings);
 				fprintf(stderr,
-					"%s: bad multi arg(%d): %s\n",
-					__func__, multi_count, optarg);
+					"%s: bad multi arg(%d): %s "
+					"nstrings=%d\n", 
+					__func__, multi_count, optarg,
+					nstrings);
 				goto multi_err;
 			}
 
@@ -1525,10 +1527,6 @@ do_famfs_cli_creat(int argc, char *argv[])
 			"Error you provided a seed (-S) without the randomize (-r) argument\n");
 		return -1;
 	}
-	if (optind > (argc - 1)) {
-		fprintf(stderr, "Must specify filename\n");
-		return -1;
-	}
 	if (interleave_param.nstrips > FAMFS_MAX_SIMPLE_EXTENTS) {
 		fprintf(stderr,
 			"famfs creat error: Number of strips(%lld) should not be "
@@ -1539,6 +1537,10 @@ do_famfs_cli_creat(int argc, char *argv[])
 
 #if 1
 	if (!mc) {
+		if (optind > (argc - 1)) {
+			fprintf(stderr, "Must specify filename\n");
+			return -1;
+		}
 		filename = argv[optind++];
 		rc = creat_one(filename, fsize,
 			       (set_stripe) ? & interleave_param : NULL,
