@@ -31,6 +31,7 @@
 #include "random_buffer.h"
 #include "mu_mem.h"
 #include "thpool.h"
+#include "famfs_log.h"
 
 /* Global option related stuff */
 
@@ -50,6 +51,16 @@ void print_global_opts(void)
 	printf("Global args:\n");
 	while (global_options[i].name)
 		printf("\t--%s\n", global_options[i++].name);
+}
+
+static void famfs_set_default_log_level(int verbose)
+{
+	if (verbose == 1) {
+	    famfs_log_set_default_log_level(FAMFS_LOG_INFO);
+	    return;
+	}
+	if (verbose > 1)
+	    famfs_log_set_default_log_level(FAMFS_LOG_DEBUG);
 }
 
 /********************************************************************/
@@ -80,6 +91,7 @@ int
 do_famfs_cli_logplay(int argc, char *argv[])
 {
 	int c;
+	int rc = 0;
 	char *fspath;
 	int verbose = 0;
 	int dry_run = 0;
@@ -179,8 +191,14 @@ do_famfs_cli_logplay(int argc, char *argv[])
 	}
 	fspath = argv[optind++];
 
-	return famfs_logplay(fspath, use_mmap, dry_run, client_mode,
+	rc = famfs_logplay(fspath, use_mmap, dry_run, client_mode,
 			     shadowpath, shadowtest, daxdev, verbose);
+	if (rc == 0)
+		famfs_log(FAMFS_LOG_NOTICE, "famfs logplay completed successfully on %s", fspath);
+	else
+		famfs_log(FAMFS_LOG_ERR, "famfs logplay failed on %s", fspath);
+
+	return rc;
 }
 
 /********************************************************************/
@@ -360,6 +378,9 @@ do_famfs_cli_mount(int argc, char *argv[])
 		goto err_out;
 	}
 
+	if (verbose)
+		famfs_set_default_log_level(verbose);
+
 	if (fuse_mode == FAMFS_FUSE) {
 		printf("daxdev=%s, mpt=%s\n", realdaxdev, realmpt);
 		rc = famfs_mount_fuse(realdaxdev, realmpt, NULL, timeout,
@@ -407,6 +428,10 @@ do_famfs_cli_mount(int argc, char *argv[])
 			   NULL /* no shadow path */,
 			   0 /* not shadow-test */,
 			   NULL, verbose);
+	if (rc == 0)
+		famfs_log(FAMFS_LOG_NOTICE, "famfs mount completed successfully on %s", realmpt);
+	else
+		famfs_log(FAMFS_LOG_ERR, "famfs mount failed on %s", realmpt);
 
 out:
 err_out:
@@ -2307,14 +2332,18 @@ main(int argc, char **argv)
 		return -1;
 	}
 
+	famfs_log_enable_syslog("famfs", LOG_PID | LOG_CONS, LOG_DAEMON);
+
 	for (i = 0; (famfs_cli_cmds[i].cmd); i++) {
 		if (!strcmp(argv[optind], famfs_cli_cmds[i].cmd)) {
 			optind++; /* move past cmd on cmdline */
 			rc = famfs_cli_cmds[i].run(argc, argv);
+			famfs_log_close_syslog();
 			return rc;
 		}
 	}
 
+	famfs_log_close_syslog();
 	fprintf(stderr, "famfs cli: Unrecognized command %s\n", argv[optind]);
 	do_famfs_cli_help(argc, argv);
 
