@@ -3182,9 +3182,8 @@ __famfs_mkfile(
 
 	/* From here on, use target_fullpath and not filename */
 
-	/* TODO: */
-	/* Don't create the file yet, but...
-	 * 1. File must not exist
+	/* Don't create the destination file yet, but...
+	 * 1. File must not exist, or must be the right size
 	 * 2. Parent path must exist
 	 * 3. Parent path must be in a famfs file system
 	 * Otherwise fail
@@ -4394,7 +4393,8 @@ famfs_cp_multi(
 			goto err_out;
 		}
 		if (verbose)
-			printf("%s:  %s\n", __func__, argv[i]);
+			printf("%s:  %s; %d fd's open\n",
+			       __func__, argv[i], count_open_fds());
 
 		switch (src_stat.st_mode & S_IFMT) {
 		case S_IFREG:
