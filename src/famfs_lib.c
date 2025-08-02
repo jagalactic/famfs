@@ -3751,10 +3751,10 @@ __famfs_copy_file_data(struct copy_data *cp)
 {
 	size_t chunksize, remainder, offset;
 	char *readbuf = NULL;
-	char *destp;
 	pid_t pid = gettid();
-	ssize_t bytes;
 	int cleanup = 0;
+	ssize_t bytes;
+	char *destp;
 	int rc = 0;
 	int i;
 
@@ -3895,7 +3895,8 @@ out_locked:
 		free(cp->cf);
 	}
 	free(cp); /* cp is not shared */
-
+	if (readbuf)
+		free(readbuf);
 	return rc;
 }
 
@@ -3934,7 +3935,16 @@ famfs_copy_file_data(
 	cf->compare = (cp_compare) ? 1 : 0; /* compare mode... */
 	pthread_mutex_init(&cf->mutex, NULL);
 
-	/* Memory map the range we need */
+	/* Memory map the entire file, to be used by the threadpool
+	 *
+	 * If it ever turns out that we can map all the files at once,
+	 * the mmap could happen lazily in the __famfs_copy_file_data()
+	 * (which runs under the threadpool when we're using it), like the open
+	 * of the source file.
+	 *
+	 * But for the time being, it's fun to see processes with terabytes
+	 * of VIRT via 'top'
+	 */
 	cf->destp = mmap(0, size, PROT_READ | PROT_WRITE,
 			 MAP_SHARED, destfd, 0);
 	assert(cf->destp != MAP_FAILED);
