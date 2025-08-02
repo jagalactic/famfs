@@ -3163,6 +3163,9 @@ __famfs_mkfile(
 	assert(size > 0);
 	assert(cwd);
 
+	if (verbose)
+		printf("%s: %d open files\n", __func__, count_open_fds());
+
 	/* If it's a relative path, append it to "cwd" to make it absolute */
 	if (filename[0] != '/') {
 		size_t len;
@@ -3193,9 +3196,14 @@ __famfs_mkfile(
 		    S_ISREG(st.st_mode) && st.st_size == size) {
 			fd = open(target_fullpath, O_RDWR, mode);
 			if (fd < 0) {
-				fprintf(stderr,
-					"%s: existing open failed %s\nerrno=%d",
-					__func__, target_fullpath, errno);
+				if (errno == EMFILE)
+					fprintf(stderr,
+						"%s: (%s) too many open files\n",
+						__func__, target_fullpath);
+				else
+					fprintf(stderr,
+						"%s: existing open failed %s\nerrno=%d",
+						__func__, target_fullpath, errno);
 			}
 			goto out;
 		}
@@ -3978,9 +3986,8 @@ __famfs_cp(
 		break;
 
 	case S_IFDIR:
-		/* source is a directory; fail for now
-		 * (should this be mkdir? Probably...
-		 * at least if it's a recursive copy)
+		/* source is a directory; call should have been to
+		 * famfs_cp_dir()...
 		 */
 		fprintf(stderr,
 			"%s: -r not specified; omitting directory '%s'\n",
@@ -3999,8 +4006,13 @@ __famfs_cp(
 	 */
 	srcfd = open(srcfile, O_RDONLY, 0);
 	if (srcfd < 0 || mock_failure == MOCK_FAIL_OPEN) {
-		fprintf(stderr, "%s: unable to open srcfile (%s)\n",
-			__func__, srcfile);
+		if (errno == EMFILE)
+			fprintf(stderr, "%s: too many open files!\n",
+				__func__);
+		else
+			fprintf(stderr,
+				"%s: unable to open srcfile (%s) errno=%d\n",
+				__func__, srcfile, errno);
 		return 1;
 	}
 
