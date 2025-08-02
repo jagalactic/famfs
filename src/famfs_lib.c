@@ -3858,9 +3858,12 @@ out:
 out_locked:
 	if (--cp->cf->refcount == 0) {
 		if (!rc)
-			printf("famfs cp: 100%%: %s\n", cp->cf->destname);
+			printf("famfs %s: 100%%: %s\n",
+			       (cp->cf->compare) ? "compare" : "cp",
+			       cp->cf->destname);
 		else
-			fprintf(stderr, "famfs cp: error: %s\n",
+			fprintf(stderr, "famfs %s: error: %s\n",
+				(cp->cf->compare) ? "compare" : "cp",
 				cp->cf->destname);
 		cleanup++;
 	} else if (cp->verbose) {
@@ -3872,7 +3875,7 @@ out_locked:
 	pthread_mutex_unlock(&cp->cf->mutex);
 
 	if (rc)
-		fprintf(stderr, "famfs cp: error: %s\n", cp->cf->destname);
+		fprintf(stderr, "famfs %s: error: %s\n", cp->cf->destname);
 
 	if (cleanup) {
 		/* cf is shared and can't be cleaned up until all threads
@@ -3926,6 +3929,7 @@ famfs_copy_file_data(
 	cf->destname = strdup(destname);
 	cf->srcfd = srcfd;
 	cf->destfd = destfd;
+	cf->compare = (cp_compare) ? 1 : 0; /* compare mode... */
 	pthread_mutex_init(&cf->mutex, NULL);
 
 	/* Memory map the range we need */
