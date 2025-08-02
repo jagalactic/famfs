@@ -4305,7 +4305,7 @@ int famfs_cp_dir(
 			 * that's a property of this recursion
 			 */
 			rc = famfs_cp_dir(lp, srcfullpath, newdirpath,
-					  mode, uid, gid, verbose);
+					  src_stat.st_mode, uid, gid, verbose);
 			free(src_copy);
 			break;
 		}
@@ -4521,7 +4521,8 @@ famfs_cp_multi(
 			if (recursive) {
 				/* Parent is guaranteed to exist,
 				 * we verified it above */
-				rc = famfs_cp_dir(&ll, argv[i], dest, mode, uid,
+				rc = famfs_cp_dir(&ll, argv[i], dest,
+						  src_stat.st_mode, uid,
 						  gid, verbose);
 				if (rc < 0) { /* rc < 0 is abort errors */
 					fprintf(stderr,
