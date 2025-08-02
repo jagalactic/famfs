@@ -841,7 +841,8 @@ famfs_v2_set_file_map(
 	int                          fd,
 	size_t                       size,
 	const struct famfs_log_fmap *fm,
-	enum famfs_file_type         type)
+	enum famfs_file_type         type,
+	int                          verbose)
 {
 	struct famfs_ioc_simple_extent kse[FAMFS_MAX_SIMPLE_EXTENTS] = { 0 };
 	struct famfs_ioc_fmap ioc_fmap = { 0 };
@@ -869,8 +870,11 @@ famfs_v2_set_file_map(
 			kse[i].offset   = fm->se[i].se_offset;
 			kse[i].len      = fm->se[i].se_len;
 
-			printf("%s: devindex=%lld offset=0x%llx len=0x%llx\n",
-			       __func__, kse[i].devindex, kse[i].offset, kse[i].len);
+			if (verbose > 1)
+				printf("%s: devindex=%lld offset=0x%llx "
+				       "len=0x%llx\n",
+				       __func__, kse[i].devindex,
+				       kse[i].offset, kse[i].len);
 		}
 		ioc_fmap.kse = kse;
 		break;
@@ -1527,7 +1531,8 @@ __famfs_logplay(
 #if (FAMFS_KABI_VERSION > 42)
 				rc =  famfs_v2_set_file_map(fd, fm->fm_size,
 							    &fm->fm_fmap,
-							    FAMFS_REG);
+							    FAMFS_REG,
+							    verbose);
 				if (rc) {
 					fprintf(stderr,
 						"%s: v2 setmap "
@@ -3270,7 +3275,8 @@ __famfs_mkfile(
 			if (FAMFS_KABI_VERSION > 42) {
 #if (FAMFS_KABI_VERSION > 42)
 				rc =  famfs_v2_set_file_map(fd, size, fmap,
-							    FAMFS_REG);
+							    FAMFS_REG,
+							    verbose);
 				if (rc) {
 					close(fd);
 					fd = rc;
@@ -3786,7 +3792,7 @@ __famfs_copy_file_data(struct copy_data *cp)
 		int percent = ((cp->cf->nchunks - cp->cf->refcount) * 100) /
 			cp->cf->nchunks;
 
-		printf("famfs_cp:  %02d%%: %s\n", percent, cp->cf->destname);
+		printf("progress:  %02d%%: %s\n", percent, cp->cf->destname);
 	}
 	pthread_mutex_unlock(&cp->cf->mutex);
 
@@ -3855,7 +3861,8 @@ famfs_copy_file_data(
 		cf->nchunks = nchunks;
 
 		if (verbose && nchunks > 1)
-			printf("%s: %ld bytes, %ld chunks in threaded copy\n",
+			printf("famfs cp: %s: "
+			       "%ld bytes, %ld chunks in threaded copy\n",
 			       destname, size, nchunks);
 
 		for (; remainder > 0; ) {
