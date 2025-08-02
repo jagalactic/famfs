@@ -3699,9 +3699,12 @@ int fd_invalid(int fd) {
 
 
 struct copy_files {
+	char *srcname;
+	char *destname;
 	int srcfd;
 	int destfd;
 	char *destp;
+	int nchunks;
 	int refcount;
 	pthread_mutex_t mutex;
 };
@@ -3776,14 +3779,23 @@ __famfs_copy_file_data(struct copy_data *cp)
 	flush_processor_cache(destp, cp->size);
 
 	pthread_mutex_lock(&cp->cf->mutex);
-	if (--cp->cf->refcount == 0)
+	if (--cp->cf->refcount == 0) {
+		printf("famfs cp: %s\n", cp->cf->destname);
 		cleanup++;
+	} else if (cp->verbose) {
+		int percent = ((cp->cf->nchunks - cp->cf->refcount) * 100) /
+			cp->cf->nchunks;
+
+		printf("famfs_cp:  %d%%: %s\n", percent, cp->cf->destname);
+	}
 	pthread_mutex_unlock(&cp->cf->mutex);
 
 out:
 	if (cleanup) {
 		/* cf is shared and can't be cleaned up until all threads
 		 * have finished with it */
+		free(cp->cf->srcname);
+		free(cp->cf->destname);
 		munmap(destp, cp->size);
 		close(cp->cf->srcfd);
 		close(cp->cf->destfd);
@@ -3806,7 +3818,8 @@ __famfs_threaded_copy(void *arg)
 static int
 famfs_copy_file_data(
 	struct famfs_locked_log *lp,
-	char *destp,
+	const char *srcname,
+	const char *destname,
 	int srcfd,
 	int destfd,
 	size_t size,
@@ -3814,13 +3827,15 @@ famfs_copy_file_data(
 {
 	size_t chunk_size = (CP_CHUNKSIZE) ? CP_CHUNKSIZE : size;
 	size_t nchunks = (size + chunk_size - 1) / chunk_size;
-	struct copy_data *cp;
 	struct copy_files *cf;
+	struct copy_data *cp;
 	int rc;
 
 	cf = calloc(1, sizeof(*cf));
 	assert(cf);
 
+	cf->srcname = strdup(srcname);
+	cf->destname = strdup(destname);
 	cf->srcfd = srcfd;
 	cf->destfd = destfd;
 	pthread_mutex_init(&cf->mutex, NULL);
@@ -3837,10 +3852,11 @@ famfs_copy_file_data(
 		remainder = size;
 		offset = 0;
 		cf->refcount = nchunks;
+		cf->nchunks = nchunks;
 
-		if (nchunks > 1)
-			printf("%s: %ld chunks in threaded copy\n",
-			       __func__, nchunks);
+		if (verbose && nchunks > 1)
+			printf("%s: %ld bytes, %ld chunks in threaded copy\n",
+			       destname, size, nchunks);
 
 		for (; remainder > 0; ) {
 			cp = calloc(1, sizeof(*cp));
@@ -3981,7 +3997,7 @@ __famfs_cp(
 
 	/* famfs_copy_file_data will close the file descriptors and unmap
 	 * the destination when it finishes */
-	return famfs_copy_file_data(lp, NULL, srcfd, destfd,
+	return famfs_copy_file_data(lp, srcfile, destfile, srcfd, destfd,
 				    srcstat.st_size, verbose);
 }
 
@@ -4365,8 +4381,9 @@ famfs_cp_multi(
 			rc = famfs_cp(&ll, argv[i], dest, mode,
 				      uid, gid, verbose);
 			if (rc < 0) { /* rc < 0 is errors we abort after */
-				fprintf(stderr, "%s: aborting copy due to error\n",
-					__func__);
+				fprintf(stderr,
+					"%s: aborting copy due to error\n",
+					argv[i]);
 				err = rc;
 				goto err_out;
 			}
@@ -4382,8 +4399,8 @@ famfs_cp_multi(
 						  gid, verbose);
 				if (rc < 0) { /* rc < 0 is abort errors */
 					fprintf(stderr,
-						"%s: aborting copy due to error\n",
-						__func__);
+						"%s/: aborting copy due to error\n",
+						argv[i]);
 					err = rc;
 					goto err_out;
 				}
