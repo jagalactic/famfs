@@ -3780,13 +3780,13 @@ __famfs_copy_file_data(struct copy_data *cp)
 
 	pthread_mutex_lock(&cp->cf->mutex);
 	if (--cp->cf->refcount == 0) {
-		printf("famfs cp: %s\n", cp->cf->destname);
+		printf("famfs cp: 100%%: %s\n", cp->cf->destname);
 		cleanup++;
 	} else if (cp->verbose) {
 		int percent = ((cp->cf->nchunks - cp->cf->refcount) * 100) /
 			cp->cf->nchunks;
 
-		printf("famfs_cp:  %d%%: %s\n", percent, cp->cf->destname);
+		printf("famfs_cp:  %02d%%: %s\n", percent, cp->cf->destname);
 	}
 	pthread_mutex_unlock(&cp->cf->mutex);
 
