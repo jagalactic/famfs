@@ -3195,8 +3195,8 @@ __famfs_mkfile(
 			fd = open(target_fullpath, O_RDWR, mode);
 			if (fd < 0) {
 				fprintf(stderr,
-					"%s: existing open failed %s\n",
-					__func__, target_fullpath);
+					"%s: existing open failed %s\nerrno=%d",
+					__func__, target_fullpath, errno);
 			}
 			goto out;
 		}
