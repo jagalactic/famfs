@@ -3875,7 +3875,9 @@ out_locked:
 	pthread_mutex_unlock(&cp->cf->mutex);
 
 	if (rc)
-		fprintf(stderr, "famfs %s: error: %s\n", cp->cf->destname);
+		fprintf(stderr, "famfs %s: error: %s\n",
+			(cp->cf->compare) ? "compare" : "cp",
+			cp->cf->destname);
 
 	if (cleanup) {
 		/* cf is shared and can't be cleaned up until all threads
