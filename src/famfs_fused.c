@@ -35,7 +35,9 @@
 #include "famfs_fmap.h"
 #include "fuse_kernel.h"
 #include "fuse_i.h"
+#include "famfs_fused.h"
 #include "famfs_fused_icache.h"
+#include "famfs_rest.h"
 
 /* We are re-using pointers to our `struct famfs_inode` and `struct
    famfs_dirp` elements as inodes. This means that we must be able to
@@ -93,6 +95,7 @@ struct _uintptr_to_must_hold_fuse_ino_t_dummy_struct \
  *     lift.
  */
 
+#if 0
 enum {
 	CACHE_NEVER,
 	CACHE_NORMAL,
@@ -115,6 +118,7 @@ struct famfs_ctx {
 	int readdirplus;
 	struct famfs_icache icache;
 };
+#endif
 
 void
 famfs_dump_opts(const struct famfs_ctx *fd)
@@ -662,7 +666,7 @@ found_inode:
 	if (inode)
 		famfs_inode_putref(inode);
 
-	dump_icache(&lo->icache);
+	dump_icache(&lo->icache, FAMFS_LOG_NOTICE);
 
 	return 0;
 
@@ -675,7 +679,7 @@ out_err:
 	if (fmeta)
 		free(fmeta);
 
-	dump_icache(&lo->icache);
+	dump_icache(&lo->icache, FAMFS_LOG_NOTICE);
 	return saverr;
 }
 
@@ -1747,6 +1751,8 @@ int main(int argc, char *argv[])
 	/* This daemonizes if !opts.foreground */
 	fuse_daemonize(opts.foreground);
 
+	famfs_diag_server_start(shadow_root);
+
 	/* Block until ctrl+c or fusermount -u */
 	if (opts.singlethread)
 		ret = fuse_session_loop(se);
@@ -1759,7 +1765,10 @@ int main(int argc, char *argv[])
 		config = NULL;
 	}
 
-	famfs_log(FAMFS_LOG_NOTICE, "%s: umount %s\n", PROGNAME, opts.mountpoint);
+	famfs_log(FAMFS_LOG_NOTICE, "%s: umount %s\n", PROGNAME,
+		  opts.mountpoint);
+	famfs_diag_server_stop();
+
 	fuse_session_unmount(se);
 
 	famfs_icache_destroy(&lo->icache);
