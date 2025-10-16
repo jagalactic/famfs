@@ -1230,11 +1230,11 @@ famfs_open(
 	fuse_ino_t nodeid,
 	struct fuse_file_info *fi)
 {
-	int fd;
+	//int fd;
 	struct famfs_ctx *lo = famfs_ctx_from_req(req);
 	struct famfs_inode *inode = famfs_get_inode_from_nodeid(&lo->icache,
 								nodeid);
-	struct famfs_inode *parent_inode = inode->parent;
+	//struct famfs_inode *parent_inode = inode->parent;
 
 	famfs_log(FAMFS_LOG_DEBUG, "%s: nodeid=%lx\n", __func__, nodeid);
 
@@ -1258,6 +1258,7 @@ famfs_open(
 	if (lo->writeback && (fi->flags & O_APPEND))
 		fi->flags &= ~O_APPEND;
 
+#if 0
 	/* Note we're opening the shadow yaml, not the actual file. The
 	 * the data for the actual file is accessed by the kernel component
 	 * via the fmap. Might not need to actually open anything here...
@@ -1271,6 +1272,10 @@ famfs_open(
 	}
 
 	fi->fh = fd;
+#else
+	famfs_inode_getref(inode->icache, inode);
+	fi->fh = -1;
+#endif
 	if (lo->cache == CACHE_NEVER)
 		fi->direct_io = 1;
 	else if (lo->cache == CACHE_ALWAYS)
@@ -1287,7 +1292,10 @@ famfs_open(
 	   in current function. */
 	fi->parallel_direct_writes = 1;
 
-	famfs_inode_putref(inode);
+	/*
+	 * We do not put our ref on the inode while it's open;
+	 * The ref we got here will be "put" in famfs_release()
+	 */
 	fuse_reply_open(req, fi);
 }
 
@@ -1297,12 +1305,25 @@ famfs_release(
 	fuse_ino_t nodeid,
 	struct fuse_file_info *fi)
 {
-	(void) nodeid;
+	struct famfs_ctx *lo = famfs_ctx_from_req(req);
+	struct famfs_inode *inode = famfs_get_inode_from_nodeid(&lo->icache,
+								nodeid);
+	(void) fi;
 
 	famfs_log(FAMFS_LOG_DEBUG, "%s: nodeid=%lx\n", __func__, nodeid);
 
-	close(fi->fh);
 	fuse_reply_err(req, 0);
+
+	if (inode->flock_held) {
+		famfs_icache_unflock(inode);
+		famfs_log(FAMFS_LOG_NOTICE, "%s: ino=%lld name=%s released flock\n",
+			  __func__, inode->ino, inode->name);
+	}
+	pthread_mutex_lock(&lo->icache.mutex);
+	/* Put 2 refs: one for from the get above,
+	 * and one for the open that this closes */
+	famfs_inode_putref_locked(inode, 2);
+	pthread_mutex_unlock(&lo->icache.mutex);
 }
 
 static void
@@ -1311,13 +1332,12 @@ famfs_flush(
 	fuse_ino_t nodeid,
 	struct fuse_file_info *fi)
 {
-	int res;
 	(void) nodeid;
+	(void) fi;
 
 	famfs_log(FAMFS_LOG_DEBUG, "%s: nodeid=%lx\n", __func__, nodeid);
 
-	res = close(dup(fi->fh));
-	fuse_reply_err(req, res == -1 ? errno : 0);
+	fuse_reply_err(req, 0);
 }
 
 static void
@@ -1435,15 +1455,45 @@ famfs_flock(
 	struct fuse_file_info *fi,
 	int op)
 {
-	int res;
-	(void) nodeid;
+	(void) fi;
+	int rc = 0;
+	struct famfs_ctx *lo = famfs_ctx_from_req(req);
+	struct famfs_inode *inode = famfs_get_inode_from_nodeid(&lo->icache,
+								nodeid);
 
-	famfs_log(FAMFS_LOG_DEBUG, "%s: nodeid=%lx op=%d\n",
+	famfs_log(FAMFS_LOG_NOTICE, "%s: nodeid=%lx op=%d\n",
 		 __func__, nodeid, op);
 
-	res = flock(fi->fh, op);
+	switch (op) {
+	case LOCK_EX:
+		if (inode->flock_held) {
+			famfs_log(FAMFS_LOG_ERR,
+				  "%s: nodeid=%lx op=%d LOCK_EX but flock already held\n",
+				  __func__, nodeid, op);
+			rc = EINVAL;
+			goto err_out;
+		}
+		famfs_icache_flock(inode);
+		break;
+	case LOCK_UN:
+		if (!inode->flock_held) {
+			famfs_log(FAMFS_LOG_ERR, "%s: nodeid=%lx op=%d LOCK_UN but flock not held\n",
+				  __func__, nodeid, op);
+			rc = EINVAL;
+			goto err_out;
+		}
+		famfs_icache_unflock(inode);
+		break;
+	case LOCK_SH:
+		famfs_log(FAMFS_LOG_ERR, "%s: nodeid=%lx op=%d LOCK_SH not supported\n",
+			  __func__, nodeid, op);
+		rc = EINVAL;
+		goto err_out;
+		break;
+	}
 
-	fuse_reply_err(req, res == -1 ? errno : 0);
+err_out:
+	fuse_reply_err(req, rc); /* if rc=0, this is a successful reply */
 }
 
 #ifdef HAVE_COPY_FILE_RANGE
