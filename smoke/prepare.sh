@@ -94,7 +94,6 @@ if (( $? == 0 )); then
     sudo umount $MPT
 fi
 sudo umount /tmp/famfs_fuse
-
 # destroy famfs file system, if any
 ${MKFS} -h            || fail "mkfs -h should work"
 ${MKFS}               && fail "mkfs without dev argument should fail"
