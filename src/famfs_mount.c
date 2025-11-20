@@ -645,6 +645,23 @@ gen_shadow_dir(void)
 	return strdup(shadow );
 }
 
+/**
+ * famfs_mount_fuse() - mount a famfs file system via fuse
+ *
+ * @realdaxdev
+ * @realmpt
+ * @realshadow
+ * @timeout
+ * @logplay_use_mmap
+ * @useraccess
+ * @default_perm
+ * @bounce_dax       - Disable and re-enable daxdev before proceeding with mount
+ * @dummy            - Perform a mount and create meta files but don't verify
+ *                     superblock and log, and don't play the log.
+ * @dummy_log_size   - Size of log file for dummy mount
+ * @debug
+ * @verbose
+ */
 int
 famfs_mount_fuse(
 	const char *realdaxdev,
@@ -655,14 +672,17 @@ famfs_mount_fuse(
 	int useraccess,
 	int default_perm,
 	int bounce_dax,
+	int dummy,
+	u64 dummy_log_size,
 	int debug,
 	int verbose)
 {
-	u64 log_offset, log_size;
+	u64 log_offset = FAMFS_SUPERBLOCK_SIZE;
 	char superblock_path[PATH_MAX] = {0};
 	struct famfs_superblock *sb = NULL;
 	char shadow_root[PATH_MAX] = {0};
-	size_t sb_size, log_size_out;;
+	u64 log_size = dummy_log_size;
+	size_t sb_size, log_size_out;
 	enum famfs_system_role role;
 	int shadow_created = 0;
 	char *local_shadow;
@@ -787,36 +807,42 @@ famfs_mount_fuse(
 		rc = -1;
 		goto out;
 	}
-	snprintf(superblock_path, PATH_MAX - 1, "%s/%s",
-		 realmpt, ".meta/.superblock");
-	sb = (struct famfs_superblock *)famfs_mmap_whole_file(superblock_path,
-							      1 /* read_only */,
-							      &sb_size);
-	if (!sb) {
-		fprintf(stderr, "%s: failed to mmap superblock file\n",
-			__func__);
-		rc = -1;
-		goto out;
-	}
 
-	/* Get the role, log offset and size via the superblock
-	 * meta file
-	 */
-	role = __famfs_get_role_and_logstats(sb, &log_offset, &log_size);
-	switch (role) {
-	case FAMFS_NOSUPER:
-		rc = -1;
-		munmap(sb, FAMFS_SUPERBLOCK_SIZE); /* unmap before umount */
+	if (!dummy) {
+		snprintf(superblock_path, PATH_MAX - 1, "%s/%s",
+			 realmpt, ".meta/.superblock");
+		sb = (struct famfs_superblock *)famfs_mmap_whole_file(
+					superblock_path, 1 /* read_only */,
+					&sb_size);
+		if (!sb) {
+			fprintf(stderr, "%s: failed to mmap superblock file\n",
+				__func__);
+			rc = -1;
+			goto out;
+		}
 
-		goto out;
-		break;
-	default:
+		/* Get the role, log offset and size via the superblock
+		 * meta file
+		 */
+		role = __famfs_get_role_and_logstats(sb, &log_offset, &log_size);
+		switch (role) {
+		case FAMFS_NOSUPER:
+			/* FAMFS_NOSUPER is the only case where we abort a mount:
+			 * unmap before umount */
+			rc = -1;
+			munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+
+			goto out;
+			break;
+		default:
+		}
+		assert(sb->ts_log_offset == FAMFS_SUPERBLOCK_SIZE);
 	}
 
 	/* Now that we know the offset and size of the log file, create
 	 * its shadow meta file
 	 */
-	rc = __famfs_mkmeta_log(shadow_root, sb->ts_log_offset, sb->ts_log_len,
+	rc = __famfs_mkmeta_log(shadow_root, log_offset, log_size,
 				role, 1 /* shadow */, verbose);
 	if (rc) {
 		fprintf(stderr, "%s: failed to create superblock file\n",
@@ -840,18 +866,20 @@ famfs_mount_fuse(
 	/* Unmap the superblock, though logplay will re-map it */
 	munmap(sb, FAMFS_SUPERBLOCK_SIZE);
 
-	/* Finally, play the log */
-	rc = famfs_logplay(realmpt, logplay_use_mmap,
-			   0 /* dry_run */,
-			   0 /* client_mode */,
-			   local_shadow,
-			   0 /* shadow_test */,
-			   verbose);
-	if (rc < 0) {
-		fprintf(stderr, "%s: failed to play the log\n", __func__);
-		goto out;
+	if (!dummy) {
+		/* Finally, play the log */
+		rc = famfs_logplay(realmpt, logplay_use_mmap,
+				   0 /* dry_run */,
+				   0 /* client_mode */,
+				   local_shadow,
+				   0 /* shadow_test */,
+				   verbose);
+		if (rc < 0) {
+			fprintf(stderr, "%s: failed to play the log\n",
+				__func__);
+			goto out;
+		}
 	}
-
 out:
 	if (rc && mounted) {
 		fprintf(stderr, "%s: unmounting due to error\n", __func__);

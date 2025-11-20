@@ -312,7 +312,7 @@ __famfs_get_role_and_logstats(
 }
 
 #if 0
-int
+enum famfs_system_role
 famfs_get_role_and_logstats(
 	const char *fspath
 	u64 *log_offsetp,
@@ -320,13 +320,17 @@ famfs_get_role_and_logstats(
 {
 	size_t sb_size;
 	char mpt_out[PATH_MAX];
+	ennum famfs_system_role role;
 
 	fd = open_superblock_file_read_only(fspath, &sb_size, @mpt_out);
 	if (fd < 0)
-		return fd;
+	  return FAMFS_NODEV;
 
 	if (sb_size != FAMFS_SUPERBLOCK_SIZE) {
 		fprintf(stderr, "%s: bad superblock size=%ld (expected %ld)\n",
+			__func__, sb_size, FAMFS_SUPERBLOCK_SIZE);
+		famfs_log(FAMFS_LOG_ERR,
+			  "%s: bad superblock size=%ld (expected %ld)\n",
 			__func__, sb_size, FAMFS_SUPERBLOCK_SIZE);
 		
 	}
@@ -341,15 +345,15 @@ famfs_get_role_and_logstats(
 	if (addr == MAP_FAILED) {
 		fprintf(stderr, "%s: failed to mmap superblock\n", __func__);
 		close(fd);
-		return -1;
+		return FAMFS_NODEV;
 	}
 
-	rc = famfs_get_role_and_logstats((struct famfs_superblock)addr,
-					 log_offsetp, log_sizep);
+	role = __famfs_get_role_and_logstats((struct famfs_superblock)addr,
+					   log_offsetp, log_sizep);
 	munmap(addr, sb_size);
 	close(fd);
 
-	return rc;
+	return role;
 }
 #endif
 

@@ -435,7 +435,9 @@ do_famfs_cli_mount(int argc, char *argv[])
 		printf("daxdev=%s, mpt=%s\n", realdaxdev, realmpt);
 		rc = famfs_mount_fuse(realdaxdev, realmpt, shadowpath, timeout,
 				      use_mmap, useraccess, default_perm,
-				      bouncedax, debug, verbose);
+				      bouncedax,
+				      0, 0, /* not dummy mount */
+				      debug, verbose);
 		goto out;
 	}
 

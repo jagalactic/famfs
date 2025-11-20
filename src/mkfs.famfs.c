@@ -58,6 +58,7 @@ struct option global_options[] = {
 	 */
 	{"kill",        no_argument,       &kill_super,    'k'},
 	{"loglen",      required_argument, 0,              'l'},
+	{"nodax",       no_argument,       &kill_super,    'D'},
 	{0, 0, 0, 0}
 };
 
@@ -66,8 +67,9 @@ main(int argc, char *argv[])
 {
 	int c;
 	int rc = 0;
-	char *daxdev = NULL;
 	int force = 0;
+	int nodax = 0;
+	char *daxdev = NULL;
 	u64 loglen = 0x800000;
 
 	/* Process global options, if any */
@@ -75,7 +77,7 @@ main(int argc, char *argv[])
 	 * to return -1 when it sees something that is not recognized option
 	 * (e.g. the command that will mux us off to the command handlers
 	 */
-	while ((c = getopt_long(argc, argv, "+fkl:h?",
+	while ((c = getopt_long(argc, argv, "+fkl:Dh?",
 				global_options, &optind)) != EOF) {
 		char *endptr;
 		s64 mult;
@@ -95,6 +97,9 @@ main(int argc, char *argv[])
 			if (mult > 0)
 				loglen *= mult;
 			printf("loglen: %lld\n", loglen);
+			break;
+		case 'D':
+			nodax = 1;
 			break;
 		case 'h':
 		case '?':
