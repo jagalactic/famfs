@@ -58,7 +58,7 @@ struct option global_options[] = {
 	 */
 	{"kill",        no_argument,       &kill_super,    'k'},
 	{"loglen",      required_argument, 0,              'l'},
-	{"nodax",       no_argument,       &kill_super,    'D'},
+	{"nodax",       no_argument,       0,              'D'},
 	{0, 0, 0, 0}
 };
 
@@ -119,10 +119,16 @@ main(int argc, char *argv[])
 	famfs_log_enable_syslog("famfs", LOG_PID | LOG_CONS, LOG_DAEMON);
 	famfs_log(FAMFS_LOG_NOTICE, "Starting famfs mkfs on device %s", daxdev);
 
-	rc = famfs_mkfs(daxdev, loglen, kill_super, force);
+	if (!nodax)
+		rc = famfs_mkfs(daxdev, loglen, kill_super, force);
+	else
+		rc = famfs_mkfs_via_dummy_mount(daxdev, loglen,
+						kill_super, force);
+
 	if (rc == 0)
-		famfs_log(FAMFS_LOG_NOTICE, "mkfs %scommand successful on device %s",
-			       (kill_super && force) ? "-k -f " : "", daxdev);
+		famfs_log(FAMFS_LOG_NOTICE,
+			  "mkfs %s command successful on device %s",
+			  (kill_super && force) ? "-k -f " : "", daxdev);
 	else
 		famfs_log(FAMFS_LOG_ERR, "mkfs failed on device %s", daxdev);
 
