@@ -1,2 +1,0 @@
-/usr/bin/ar qc liblibpcq.a CMakeFiles/libpcq.dir/src/pcq_lib.c.o
-/usr/bin/ranlib liblibpcq.a

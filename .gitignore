@@ -4,6 +4,7 @@ debug/
 release/
 coverage/
 sanitize/
+_codeql_build_dir/
 *.log
 Module.symvers
 modules.order
