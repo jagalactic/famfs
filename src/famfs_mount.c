@@ -856,7 +856,9 @@ famfs_mount_fuse(
 		default:
 		}
 	}
-	assert(sb->ts_log_offset == FAMFS_SUPERBLOCK_SIZE);
+
+	if (role == FAMFS_MASTER || role == FAMFS_CLIENT)
+		assert(sb->ts_log_offset == FAMFS_SUPERBLOCK_SIZE);
 
 	if (log_size > 0) {
 		/* Now that we know the offset and size of the log file, create

@@ -2606,7 +2606,6 @@ famfs_map_superblock_by_path(
 		return NULL;
 	}
 	sb = (struct famfs_superblock *)addr;
-	flush_processor_cache(sb, sb_size); /* invalidate processor cache */
 
 	if (check_superblock) {
 		if (famfs_check_super(sb, NULL, NULL)) {
@@ -2623,6 +2622,7 @@ static struct famfs_log *
 famfs_map_log_by_path(
 	const char *path,
 	int         read_only,
+	bool        check_log,
 	enum lock_opt lockopt)
 {
 	struct famfs_log *logp;
@@ -2649,20 +2649,19 @@ famfs_map_log_by_path(
 			__func__, path);
 		return NULL;
 	}
-	/* Should not need to invalidate the cache for the log because we have
-	 * verified that we are running on the master, which is the only node
-	 * that is allowed to write the log */
+
 	logp = (struct famfs_log *)addr;
-	if (log_size != logp->famfs_log_len) {
+
+	invalidate_processor_cache(logp, log_size);
+	if (check_log && log_size != logp->famfs_log_len) {
 		fprintf(stderr,
 			"%s: log file length is invalid (%lld / %lld)\n",
 			__func__, (s64)log_size, logp->famfs_log_len);
 		munmap(addr, log_size);
 		return NULL;
 	}
-	flush_processor_cache(logp, log_size);  /* invalidate processor cache */
 
-	if (famfs_validate_log_header(logp)) {
+	if (check_log && famfs_validate_log_header(logp)) {
 		munmap(addr, log_size);
 		return NULL;
 	}
@@ -2786,6 +2785,7 @@ famfs_fsck(
 			}
 
 			logp = famfs_map_log_by_path(path, 1 /* read only */,
+						     true /* check_log */,
 						     NO_LOCK);
 			if (!logp) {
 				fprintf(stderr,
@@ -5327,7 +5327,9 @@ int famfs_mkfs_via_dummy_mount(
 		rc = -ENODEV;
 		goto out_umount;
 	}
-	logp = famfs_map_log_by_path(mpt_out, 0 /* writable */, NO_LOCK);
+	logp = famfs_map_log_by_path(mpt_out, 0 /* writable */,
+				     false /* don't check the log */,
+				     NO_LOCK);
 	if (!logp) {
 		fprintf(stderr, "%s: failed to mmap log via %s\n",
 			__func__, mpt_out);
