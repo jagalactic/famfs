@@ -845,9 +845,12 @@ famfs_mount_fuse(
 		case FAMFS_NOSUPER:
 			/* FAMFS_NOSUPER is the only case where we abort a
 			 * non-dummy mount: unmap before umount */
-			rc = -1;
-			munmap(sb, FAMFS_SUPERBLOCK_SIZE);
-
+			sb = NULL;
+			rc = munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+			if (rc)
+				fprintf(stderr, "%s: failed to munmap superblock"
+					" errno=%d\n", __func__, errno);
+			rc = -EPERM;
 			goto out;
 			break;
 		default:
@@ -883,7 +886,11 @@ famfs_mount_fuse(
 
 	/* Unmap the superblock, though logplay will re-map it */
 	if (sb) {
-		munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+		int rc2 = munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+		if (rc2)
+			fprintf(stderr, "%s: failed to unmap superblock\n",
+				__func__);
+
 		sb = NULL;
 	}
 
@@ -902,6 +909,12 @@ famfs_mount_fuse(
 		}
 	}
 out:
+	if (sb) {
+		int rc2 = munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+		if (rc2)
+			fprintf(stderr, "%s: failed to munmap superblock\n",
+				__func__);
+	}
 	if (rc && mounted) {
 		fprintf(stderr, "%s: unmounting due to error\n", __func__);
 		umountrc = umount(realmpt);
