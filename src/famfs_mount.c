@@ -855,9 +855,14 @@ famfs_mount_fuse(
 out:
 	if (rc && mounted) {
 		fprintf(stderr, "%s: unmounting due to error\n", __func__);
-		umountrc = umount(realmpt);
+		/* Ensure superblock is unmapped before umount to avoid EBUSY */
+		if (sb)
+			munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+		
+		/* Use MNT_DETACH for lazy unmount to avoid EBUSY from fuse daemon */
+		umountrc = umount2(realmpt, MNT_DETACH);
 		if (umountrc)
-			fprintf(stderr, "%s: umount failed rc=%d errno=%d\n",
+			fprintf(stderr, "%s: umount2 failed rc=%d errno=%d\n",
 				__func__, umountrc, errno);
 	}
 
