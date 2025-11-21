@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblibicache.a CMakeFiles/libicache_obj.dir/src/famfs_fused_icache.c.o
+/usr/bin/ranlib liblibicache.a

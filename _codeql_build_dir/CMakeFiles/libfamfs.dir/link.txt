@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblibfamfs.a CMakeFiles/libfamfs.dir/src/famfs_lib.c.o CMakeFiles/libfamfs.dir/src/famfs_alloc.c.o CMakeFiles/libfamfs.dir/src/famfs_misc.c.o CMakeFiles/libfamfs.dir/src/famfs_yaml.c.o CMakeFiles/libfamfs.dir/src/famfs_fmap.c.o CMakeFiles/libfamfs.dir/src/famfs_mount.c.o CMakeFiles/libfamfs.dir/src/famfs_debug.c.o CMakeFiles/libfamfs.dir/src/famfs_log.c.o CMakeFiles/libfamfs.dir/src/famfs_dax.c.o
+/usr/bin/ranlib liblibfamfs.a

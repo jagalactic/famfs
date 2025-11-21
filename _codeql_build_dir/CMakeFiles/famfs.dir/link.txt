@@ -1,0 +1,1 @@
+/home/runner/work/famfs/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/famfs.dir/link.d CMakeFiles/famfs.dir/src/famfs_cli.c.o -o famfs  liblibfamfs.a testlib/libfamfstest.a -luuid -lz -lyaml libcthreadpool.a -lpthread -ldaxctl

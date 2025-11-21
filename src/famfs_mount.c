@@ -807,6 +807,7 @@ famfs_mount_fuse(
 	case FAMFS_NOSUPER:
 		rc = -1;
 		munmap(sb, FAMFS_SUPERBLOCK_SIZE); /* unmap before umount */
+		sb = NULL; /* Mark as unmapped */
 
 		goto out;
 		break;
@@ -839,6 +840,7 @@ famfs_mount_fuse(
 
 	/* Unmap the superblock, though logplay will re-map it */
 	munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+	sb = NULL; /* Mark as unmapped to prevent double unmap in error path */
 
 	/* Finally, play the log */
 	rc = famfs_logplay(realmpt, logplay_use_mmap,
@@ -856,9 +858,11 @@ out:
 	if (rc && mounted) {
 		fprintf(stderr, "%s: unmounting due to error\n", __func__);
 		/* Ensure superblock is unmapped before umount to avoid EBUSY */
-		if (sb)
+		if (sb) {
 			munmap(sb, FAMFS_SUPERBLOCK_SIZE);
-		
+			sb = NULL;
+		}
+
 		/* Use MNT_DETACH for lazy unmount to avoid EBUSY from fuse daemon */
 		umountrc = umount2(realmpt, MNT_DETACH);
 		if (umountrc)

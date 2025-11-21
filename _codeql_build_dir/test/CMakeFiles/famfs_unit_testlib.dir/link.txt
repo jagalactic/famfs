@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfamfs_unit_testlib.a CMakeFiles/famfs_unit_testlib.dir/famfs_unit.c.o
+/usr/bin/ranlib libfamfs_unit_testlib.a

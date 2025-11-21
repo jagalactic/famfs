@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfamfstest.a CMakeFiles/famfstest.dir/random_buffer.c.o CMakeFiles/famfstest.dir/xrand.c.o
+/usr/bin/ranlib libfamfstest.a

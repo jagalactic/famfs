@@ -1,0 +1,1 @@
+/home/runner/work/famfs/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/pcq.dir/link.d CMakeFiles/pcq.dir/src/pcq.c.o -o pcq  liblibpcq.a liblibfamfs.a -luuid -lz testlib/libfamfstest.a -lyaml libcthreadpool.a -lpthread -ldaxctl

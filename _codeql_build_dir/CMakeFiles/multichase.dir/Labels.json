@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/CMakeFiles/multichase"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/CMakeFiles/multichase.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/CMakeFiles/multichase-complete.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/src/multichase-stamp/multichase-build.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/src/multichase-stamp/multichase-configure.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/src/multichase-stamp/multichase-download.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/src/multichase-stamp/multichase-install.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/src/multichase-stamp/multichase-mkdir.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/src/multichase-stamp/multichase-patch.rule"
+		},
+		{
+			"file" : "/home/runner/work/famfs/famfs/_codeql_build_dir/src/multichase-stamp/multichase-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"multichase"
+		],
+		"name" : "multichase"
+	}
+}
