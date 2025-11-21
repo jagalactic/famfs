@@ -2671,7 +2671,8 @@ famfs_map_log_by_path(
 
 int
 famfs_fsck(
-	const char *path,
+	const char *path_input,
+	bool nodax,
 	int use_mmap,
 	int human,
 	int force,
@@ -2680,6 +2681,8 @@ famfs_fsck(
 {
 	struct famfs_superblock *sb = NULL;
 	struct famfs_log *logp = NULL;
+	const char *path = path_input;
+	char *dummy_mpt = NULL;
 	struct stat st;
 	int famfs_type;
 	size_t size;
@@ -2688,6 +2691,9 @@ famfs_fsck(
 	assert(path);
 	assert(strlen(path) > 1);
 
+	/* If "path_input" is a daxdev and we're in nodax mode, we'll do a
+	 * dummy mount, and jump back here with path=<dummy_mpt> */
+restart:
 	rc = stat(path, &st);
 	if (rc < 0) {
 		fprintf(stderr, "%s: failed to stat path %s (%s)\n",
@@ -2725,17 +2731,34 @@ famfs_fsck(
 				__func__, path);
 		}
 
-		/* If it's a device, we'll try to mmap superblock and log
-		 * from the device */
-		rc = famfs_get_device_size(path, &size, 0);
-		if (rc < 0)
-			return -1;
+		if (nodax) {
+			/* path is a daxdev, but nodax means we should do a
+			 * dummy mount and fsck via the mount point */
+			rc = famfs_dummy_mount(path,
+					       0 /* figure out log size */,
+					       &dummy_mpt, 1, 1);
+			if (rc) {
+				fprintf(stderr,
+					"%s: dummy mount failed for %s\n",
+					__func__, path);
+				return rc;
+			}
+			path = dummy_mpt;
+			goto restart;
 
-		rc = famfs_mmap_superblock_and_log_raw(path, &sb, &logp,
+		} else {
+			/* If it's a device, we'll try to mmap superblock and
+			 * log from the device */
+			rc = famfs_get_device_size(path, &size, 0);
+			if (rc < 0)
+				return -1;
+
+			rc = famfs_mmap_superblock_and_log_raw(path, &sb, &logp,
 						       0 /* return log size */,
 						       1 /* read-only */);
-		if (rc)
-			return rc;
+			if (rc)
+				return rc;
+		}
 
 		break;
 	}
@@ -2871,7 +2894,17 @@ err_out:
 		free(sb);
 	if (!use_mmap && logp)
 		free(logp);
-
+	if (dummy_mpt) {
+		int umountrc = umount(dummy_mpt);
+		if (umountrc) {
+			fprintf(stderr,
+				"%s: %d umount failed for %s (rc=%d errno=%d)\n",
+				__func__, getpid(), dummy_mpt, umountrc, errno);
+		} else {
+			printf("%s: umount successful for %s\n",
+			       __func__, dummy_mpt);
+		}
+	}
 	return rc;
 }
 
@@ -5262,7 +5295,6 @@ int famfs_mkfs_via_dummy_mount(
 	char *mpt_out;
 	int umountrc;
 	int rc = 0;
-	int umount_retries = 2;
 
 	rc = famfs_dummy_mount(daxdev, log_len, &mpt_out, 1, 1);
 	if (rc) {
@@ -5357,10 +5389,6 @@ out_umount:
 		fprintf(stderr,
 			"%s: %d umount failed for %s (rc=%d errno=%d)\n",
 			__func__, getpid(), mpt_out, umountrc, errno);
-		if (umount_retries--) {
-			sleep(1);
-			goto out_umount;
-		}
 	} else {
 		printf("%s: umount successful for %s\n", __func__, mpt_out);
 	}
