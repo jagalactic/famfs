@@ -839,7 +839,8 @@ famfs_mount_fuse(
 	/* Get the role, log offset and size via the superblock
 	 * meta file
 	 */
-	role = __famfs_get_role_and_logstats(sb, &log_offset, &log_size);
+	role = __famfs_get_role_and_logstats(sb, &log_offset,
+					     (u64 *)&log_size_out);
 	if (!dummy) {
 		switch (role) {
 		case FAMFS_NOSUPER:
@@ -859,6 +860,11 @@ famfs_mount_fuse(
 
 	if (role == FAMFS_MASTER || role == FAMFS_CLIENT)
 		assert(sb->ts_log_offset == FAMFS_SUPERBLOCK_SIZE);
+
+	/* if log_size is set, it's from the dummy_log_size argument - use that.
+	 * If not set, use the actual log size form the superblock */
+	if (log_size == 0)
+		log_size = log_size_out;
 
 	if (log_size > 0) {
 		/* Now that we know the offset and size of the log file, create

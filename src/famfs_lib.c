@@ -1232,7 +1232,7 @@ __famfs_mkmeta_log(
 	int rc;
 
 	assert(log_offset == 0x200000);
-	assert(log_size = 0x800000); /* XXX */
+	//assert(log_size == 0x800000); /* XXX */
 
 	strncat(dirpath, mpt,     PATH_MAX - 1);
 	strncat(dirpath, "/",     PATH_MAX - 1);
@@ -2890,10 +2890,17 @@ restart:
 	}
 	rc = famfs_fsck_scan(sb, logp, human, nbuckets, verbose);
 err_out:
-	if (!use_mmap && sb)
-		free(sb);
-	if (!use_mmap && logp)
-		free(logp);
+	if (use_mmap) {
+		if (logp)
+			munmap(logp, sb->ts_log_len);
+		if (sb)
+			munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+	} else {
+		if (sb)
+			free(sb);
+		if (logp)
+			free(logp);
+	}
 	if (dummy_mpt) {
 		int umountrc = umount(dummy_mpt);
 		if (umountrc) {
@@ -5144,7 +5151,8 @@ __famfs_mkfs(const char              *daxdev,
 
 	/* Minimum log length is the FAMFS_LOG_LEN; Also, must be a power of 2 */
 	if (log_len & (log_len - 1) || log_len < FAMFS_LOG_LEN) {
-		fprintf(stderr, "Error: invalid log length (%lld)\n", log_len);
+		fprintf(stderr, "%s: Error: invalid log length (%lld)\n",
+			__func__, log_len);
 		return -EINVAL;
 	}
 
