@@ -846,8 +846,8 @@ famfs_mount_fuse(
 		case FAMFS_NOSUPER:
 			/* FAMFS_NOSUPER is the only case where we abort a
 			 * non-dummy mount: unmap before umount */
-			sb = NULL;
 			rc = munmap(sb, FAMFS_SUPERBLOCK_SIZE);
+			sb = NULL;
 			if (rc)
 				fprintf(stderr, "%s: failed to munmap superblock"
 					" errno=%d\n", __func__, errno);
@@ -926,10 +926,13 @@ out:
 	if (rc && mounted) {
 		fprintf(stderr, "%s: unmounting due to error\n", __func__);
 		umountrc = umount(realmpt);
-		if (umountrc)
+		if (umountrc) {
 			fprintf(stderr,
 				"%s: umount failed for %s (rc=%d errno=%d)\n",
 				__func__, realmpt, umountrc, errno);
+			/* Expected by smoke tests in this instance */
+			rc = 99;
+		}
 	}
 
 	free(local_shadow);

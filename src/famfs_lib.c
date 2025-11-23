@@ -84,6 +84,7 @@ static int famfs_mmap_superblock_and_log_raw(const char *devname,
 static int open_superblock_file_read_only(const char *path, size_t  *sizep,
 					  char *mpt_out);
 static char *famfs_relpath_from_fullpath(const char *mpt, char *fullpath);
+static void famfs_kill_superblock(struct famfs_superblock *sb);
 
 /* famfs v2 stuff (dual standalone / fuse) */
 
@@ -5149,21 +5150,12 @@ __famfs_mkfs(const char              *daxdev,
 {
 	int rc;
 
-	/* Minimum log length is the FAMFS_LOG_LEN; Also, must be a power of 2 */
-	if (log_len & (log_len - 1) || log_len < FAMFS_LOG_LEN) {
-		fprintf(stderr, "%s: Error: invalid log length (%lld)\n",
-			__func__, log_len);
-		return -EINVAL;
-	}
-
 	/* This test is redundant with famfs_mfks(), but is kept because that
 	 * function can't be called by unit tests (because it opens the
 	 * actual device)
 	 */
 	if (kill && force) {
-		printf("Famfs superblock killed\n");
-		sb->ts_magic = 0;
-		flush_processor_cache(sb, FAMFS_SUPERBLOCK_SIZE);
+		famfs_kill_superblock(sb);
 		return 0;
 	}
 
@@ -5304,6 +5296,19 @@ int famfs_mkfs_via_dummy_mount(
 	int umountrc;
 	int rc = 0;
 
+	/* This will be checked again, but it's a valid way to check whether
+	 * daxdev is actually a dax device */
+	rc = famfs_get_device_size(daxdev, &devsize_out, 1);
+	if (rc)
+		return rc;
+
+	/* Minimum log length is the FAMFS_LOG_LEN; And must be a power of 2 */
+	if (log_len & (log_len - 1) || log_len < FAMFS_LOG_LEN) {
+		fprintf(stderr, "%s: Error: invalid log length (%lld)\n",
+			__func__, log_len);
+		return -EINVAL;
+	}
+
 	rc = famfs_dummy_mount(daxdev, log_len, &mpt_out, 1, 1);
 	if (rc) {
 		fprintf(stderr, "%s: dummy mount failed for %s\n",
@@ -5381,7 +5386,7 @@ int famfs_mkfs_via_dummy_mount(
 
 out_umount:
 	if (logp) {
-		int rc2 = munmap(logp, sb->ts_log_len);
+		int rc2 = munmap(logp, log_len);
 		if (rc2)
 			fprintf(stderr, "%s: failed to unmap log\n", __func__);
 	}
@@ -5415,6 +5420,13 @@ famfs_mkfs(const char *daxdev,
 	size_t devsize_out;
 	char *mpt = NULL;
 	int rc;
+
+	/* Minimum log length is the FAMFS_LOG_LEN; And must be a power of 2 */
+	if (log_len & (log_len - 1) || log_len < FAMFS_LOG_LEN) {
+		fprintf(stderr, "%s: Error: invalid log length (%lld)\n",
+			__func__, log_len);
+		return -EINVAL;
+	}
 
 	mpt = famfs_get_mpt_by_dev(daxdev);
 	if (mpt) {

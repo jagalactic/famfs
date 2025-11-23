@@ -157,7 +157,7 @@ do_famfs_cli_logplay(int argc, char *argv[])
 					"%s: don't specify more than one "
 					"shadowpath\n",
 					__func__);
-				return -EINVAL;
+				return EINVAL;
 			}
 			shadowpath = optarg;
 			break;
@@ -178,7 +178,7 @@ do_famfs_cli_logplay(int argc, char *argv[])
 			"Error: The --mmap and --read arguments "
 			"are mutually exclusive\n\n");
 		famfs_logplay_usage(argc, argv);
-		return -1;
+		return 1;
 	}
 	if (!(use_mmap || use_read)) {
 		/* If neither method was explicitly requested, default to mmap */
@@ -188,7 +188,7 @@ do_famfs_cli_logplay(int argc, char *argv[])
 	if (daxdev && !shadowpath) {
 		fprintf(stderr,
 			"Error: daxdev only used with shadow logplay\n");
-		return -1;
+		return 1;
 	}
 	if (shadowpath)
 		printf("Logplay: running in shadow test mode\n");
@@ -199,7 +199,7 @@ do_famfs_cli_logplay(int argc, char *argv[])
 			"(actually any path within a famfs file system "
 			"will work)\n");
 		famfs_logplay_usage(argc, argv);
-		return -1;
+		return 1;
 	}
 	fspath = argv[optind++];
 
@@ -2371,14 +2371,14 @@ do_famfs_cli_chkread(int argc, char *argv[])
 
 	if (filename == NULL) {
 		fprintf(stderr, "Must supply filename\n");
-		exit(-1);
+		return 1;
 	}
 
 	rc = stat(filename, &st);
 	if (rc < 0) {
 		fprintf(stderr, "%s: could not stat file %s\n",
 			__func__, filename);
-		exit(-1);
+		return 1;
 	}
 	buf = calloc(1, st.st_size);
 	assert(buf);
@@ -2492,6 +2492,21 @@ do_famfs_cli_help(int argc, char **argv)
 		printf("\t%s\n", famfs_cli_cmds[i].cmd);
 }
 
+
+#include <stdlib.h>
+
+int exit_val(int rc) {
+	/* Take absolute value */
+	int val = (rc < 0) ? -rc : rc;
+
+	/* If less than 127, return it; otherwise cap at 127 */
+	if (val < 127) {
+		return val;
+	} else {
+		return 127;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -2517,7 +2532,7 @@ main(int argc, char **argv)
 	if (optind >= argc) {
 		fprintf(stderr, "famfs_cli: missing command\n\n");
 		do_famfs_cli_help(argc, argv);
-		return -1;
+		return 1;
 	}
 
 	famfs_log_enable_syslog("famfs", LOG_PID | LOG_CONS, LOG_DAEMON);
@@ -2527,7 +2542,7 @@ main(int argc, char **argv)
 			optind++; /* move past cmd on cmdline */
 			rc = famfs_cli_cmds[i].run(argc, argv);
 			famfs_log_close_syslog();
-			return rc;
+			return exit_val(rc);
 		}
 	}
 
@@ -2535,6 +2550,6 @@ main(int argc, char **argv)
 	fprintf(stderr, "famfs cli: Unrecognized command %s\n", argv[optind]);
 	do_famfs_cli_help(argc, argv);
 
-	return -1;
+	return 3;
 }
 
