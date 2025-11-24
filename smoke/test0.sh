@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source test_header.sh
+source smoke/test_header.sh
 
 TEST="test0"
 
