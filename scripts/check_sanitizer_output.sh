@@ -32,15 +32,21 @@ fi
 echo ":== Error: Sanitizers found errors..."
 echo
 
+#
+# Sanitizer output blocks are delimited by "==<pid>==" prefix on each line.
+# Extract all lines with this prefix for complete error context.
+#
 if ((asan_errors > 0)); then
     echo ":== AddressSanitizer errors ($asan_errors):"
-    grep -A 20 "ERROR: AddressSanitizer:" "$logfile"
+    grep -E "^==[0-9]+==" "$logfile" | grep -A 1000 "ERROR: AddressSanitizer:" | \
+        grep -B 1000 -m 1 "SUMMARY: AddressSanitizer:"
     echo
 fi
 
 if ((lsan_errors > 0)); then
     echo ":== LeakSanitizer errors ($lsan_errors):"
-    grep -A 20 "ERROR: LeakSanitizer:" "$logfile"
+    grep -E "^==[0-9]+==" "$logfile" | grep -A 1000 "ERROR: LeakSanitizer:" | \
+        grep -B 1000 -m 1 "SUMMARY: LeakSanitizer:"
     echo
 fi
 
@@ -50,4 +56,4 @@ if ((ubsan_errors > 0)); then
     echo
 fi
 
-exit $total_errors
+exit 1
