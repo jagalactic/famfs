@@ -36,7 +36,7 @@
 #include "fuse_i.h"
 #include "famfs_fused.h"
 #include "famfs_fused_icache.h"
-#include "famfs_rest.h"
+#include "famfs_fused_rest.h"
 
 #ifdef FAMFS_COVERAGE
 extern void __gcov_dump(void);
@@ -511,6 +511,9 @@ found_inode:
 
 		famfs_log(FAMFS_LOG_DEBUG,
 			  "s: inode=%d already cached\n", inode->ino);
+
+		/* Use cached attrs (preserves chown/chmod changes) */
+		e->attr = inode->attr;
 
 		close(newfd);
 		newfd = -1;

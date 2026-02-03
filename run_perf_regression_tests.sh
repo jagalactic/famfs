@@ -14,6 +14,9 @@ SUDO="${SUDO:-sudo}"
 SUMMARY_FILE="${SUMMARY_FILE:-$LOG_DIR/summary_${RUN_ID}.log}"
 FAMFS_MODE="${FAMFS_MODE:-fuse}"
 
+
+# Example: export FAMFS_BIN_DIR=/opt/famfs/bin
+# Can also set FAMFS_BIN_DIR from cmdline, if PWD is not in famfs/perf directory
 FAMFS_BIN_DIR="${FAMFS_BIN_DIR:-$PWD/debug}"
 
 # Default device: /dev/dax0.0 (user can override by setting FAMFS_DEV in env)

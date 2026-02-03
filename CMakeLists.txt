@@ -150,7 +150,7 @@ target_compile_definitions(libmongoose
 add_executable(famfs src/famfs_cli.c)
 add_executable(mkfs.famfs src/mkfs.famfs.c)
 add_executable(pcq src/pcq.c)
-add_executable(famfs_fused src/famfs_fused.c src/famfs_rest.c)
+add_executable(famfs_fused src/famfs_fused.c src/famfs_fused_rest.c)
 
 find_package(PkgConfig REQUIRED)
 if (NOT PKG_CONFIG_FOUND)
@@ -158,8 +158,10 @@ if (NOT PKG_CONFIG_FOUND)
 endif()
 
 pkg_check_modules(DAXCTL REQUIRED libdaxctl)
+pkg_check_modules(CURL REQUIRED libcurl)
 
-target_link_libraries(libfamfs PRIVATE uuid z yaml ${DAXCTL_LIBRARIES})
+target_link_libraries(libfamfs PRIVATE uuid z yaml ${DAXCTL_LIBRARIES} ${CURL_LIBRARIES})
+target_include_directories(libfamfs PRIVATE ${CURL_INCLUDE_DIRS})
 target_include_directories(libfamfs PRIVATE ${DAXCTL_INCLUDE_DIRS})
 
 target_link_libraries(famfs libfamfs famfstest uuid z yaml)
