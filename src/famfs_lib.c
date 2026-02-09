@@ -39,8 +39,8 @@
 #include "famfs_meta.h"
 #include "famfs_lib.h"
 #include "famfs_lib_internal.h"
-#include "mu_mem.h"
 #include "thpool.h"
+#include "libfcc.h"
 
 int mock_kmod = 0; /* unit tests can set this to avoid ioctl calls and whatnot */
 int mock_fstype = 0;
@@ -4548,6 +4548,12 @@ famfs_copy_file_data(
 	cf->destp = mmap(0, size, PROT_READ | PROT_WRITE,
 			 MAP_SHARED, destfd, 0);
 	assert(cf->destp != MAP_FAILED);
+	if (mock_failure == MOCK_FAIL_MMAP) {
+		fprintf(stderr,
+				"%s: MOCK_FAIL_MMAP unable to mmap destfile(%s) errno=%d\n",
+				__func__, destname, errno);
+		return 1;
+	}
 
 	/* if thpool_add_work returns an error, fall back */
 	if (lp->thp) {
