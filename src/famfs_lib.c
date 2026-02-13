@@ -39,8 +39,8 @@
 #include "famfs_meta.h"
 #include "famfs_lib.h"
 #include "famfs_lib_internal.h"
-#include "mu_mem.h"
 #include "thpool.h"
+#include "libfcc.h"
 
 int mock_kmod = 0; /* unit tests can set this to avoid ioctl calls and whatnot */
 int mock_fstype = 0;
@@ -148,9 +148,9 @@ file_is_famfs(const char *fname)
 		 */
 		char shadow[PATH_MAX];
 		char sock_path[PATH_MAX];
-		char *response = NULL;
 		size_t shadow_len;
 		int rc;
+		struct stat st;
 
 		rc = famfs_get_shadow_from_xattr(check_path, shadow,
 						 sizeof(shadow));
@@ -165,10 +165,14 @@ file_is_famfs(const char *fname)
 		memcpy(sock_path, shadow, shadow_len);
 		memcpy(sock_path + shadow_len, "/sock", 6);
 
-		rc = famfs_http_get_uds(sock_path, "/pid", &response,
-					NULL, NULL);
-		free(response);
-		if (rc < 0)
+		rc = stat(sock_path, &st);
+		if (rc < 0) {
+			fprintf(stderr, "%s: failed to stat file %s (%s)\n",
+					__func__, sock_path, strerror(errno));
+			return NOT_FAMFS;
+		}
+
+		if (!S_ISSOCK(st.st_mode))
 			return NOT_FAMFS;
 
 		return FAMFS_FUSE;
@@ -4548,6 +4552,12 @@ famfs_copy_file_data(
 	cf->destp = mmap(0, size, PROT_READ | PROT_WRITE,
 			 MAP_SHARED, destfd, 0);
 	assert(cf->destp != MAP_FAILED);
+	if (mock_failure == MOCK_FAIL_MMAP) {
+		fprintf(stderr,
+				"%s: MOCK_FAIL_MMAP unable to mmap destfile(%s) errno=%d\n",
+				__func__, destname, errno);
+		return 1;
+	}
 
 	/* if thpool_add_work returns an error, fall back */
 	if (lp->thp) {
