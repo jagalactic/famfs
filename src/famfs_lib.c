@@ -4553,6 +4553,13 @@ famfs_copy_file_data(
 			 MAP_SHARED, destfd, 0);
 	assert(cf->destp != MAP_FAILED);
 
+	if (mock_failure == MOCK_FAIL_MMAP) {
+		fprintf(stderr,
+			"%s: MOCK_FAIL_MMAP unable to mmap destfile(%s) errno=%d\n",
+			__func__, destname, errno);
+		return 1;
+	}
+
 	/* if thpool_add_work returns an error, fall back */
 	if (lp->thp) {
 		size_t remainder, offset, this_chunk;
