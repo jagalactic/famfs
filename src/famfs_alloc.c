@@ -35,8 +35,6 @@
 #include "famfs_lib.h"
 #include "famfs_lib_internal.h"
 #include "bitmap.h"
-#include "mu_mem.h"
-
 
 void
 mu_print_bitmap(u8 *bitmap, int num_bits)
