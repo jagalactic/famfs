@@ -34,8 +34,8 @@
 #include <pthread.h>
 
 #include "famfs_lib.h"
-#include "mu_mem.h"
 #include "random_buffer.h"
+#include "libfcc.h"
 #include "famfs.h"
 #include "pcq.h"
 
