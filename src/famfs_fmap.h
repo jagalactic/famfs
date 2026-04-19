@@ -78,6 +78,7 @@ void free_mem_fmap(struct fmap_mem_header *fm);
 int validate_mem_fmap(struct fmap_mem_header *fm, int enforce, int verbose);
 
 ssize_t famfs_log_file_meta_to_msg(char *msg, uint msg_size, int file_type,
-		const struct famfs_log_file_meta *fmeta);
+		const struct famfs_log_file_meta *fmeta,
+		uint32_t *meta_size_out);
 
 #endif /* FAMFS_FMAP_H */

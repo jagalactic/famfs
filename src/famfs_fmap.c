@@ -30,7 +30,7 @@
 #include "famfs_lib.h"
 #include "famfs_meta.h"
 #include "famfs_fmap.h"
-#include "fuse_kernel.h"
+#include "dax_fmap_wire.h"
 
 void pr_verbose(int verbose, const char *format, ...) {
 	if (!verbose) {
@@ -132,7 +132,7 @@ alloc_interleaved_fmap(
 	if (nstrips_per_interleave > FAMFS_MAX_SIMPLE_EXT)
 		goto out_free;
 
-	fm->flh.fmap_ext_type = FUSE_FAMFS_EXT_INTERLEAVE;
+	fm->flh.fmap_ext_type = FAMFS_EXT_INTERLEAVE;
 	fm->flh.niext = ninterleave;
 
 	pr_verbose(verbose, "%s: ninterleave=%d sizeof(ie)=%ld\n",
@@ -200,97 +200,95 @@ famfs_log_file_meta_to_msg(
 	char *msg,
 	uint msg_size,
 	int file_type,
-	const struct famfs_log_file_meta *fmeta)
+	const struct famfs_log_file_meta *fmeta,
+	uint32_t *meta_size_out)
 {
-	struct fuse_famfs_fmap_header *flh = (struct fuse_famfs_fmap_header *)msg;
 	const struct famfs_log_fmap *log_fmap = &fmeta->fm_fmap;
 	uint cursor = 0;
 	uint i, j;
 
-	if (msg_size < sizeof(*flh))
-		return -EINVAL;
+	(void)file_type;
 
-	flh->fmap_version = FAMFS_FMAP_VERSION;
-	flh->file_type = file_type;
-	flh->ext_type = fmeta->fm_fmap.fmap_ext_type;
-	flh->file_size = fmeta->fm_size;
-	switch (flh->ext_type) {
-	case FAMFS_EXT_SIMPLE:
-		flh->nextents = fmeta->fm_fmap.fmap_nextents;
-		break;
-	case FAMFS_EXT_INTERLEAVE:
-		flh->nextents = fmeta->fm_fmap.fmap_niext;
-		break;
-	default:
-		goto err_out;
-	}
-
-	cursor += sizeof(*flh);
-
-	printf("%s: size=%ld ext_type=%d nextents=%d\n",
-	       __func__, flh->file_size, flh->ext_type, flh->nextents);
-	famfs_emit_file_yaml(fmeta, stdout); /* needs famfs_lib.h */
 	switch (log_fmap->fmap_ext_type) {
-	case FUSE_FAMFS_EXT_SIMPLE: {
-		struct fuse_famfs_simple_ext *se = (struct fuse_famfs_simple_ext *)&msg[cursor];
-		size_t ext_list_size = log_fmap->fmap_nextents * sizeof(*se);
+	case FAMFS_EXT_SIMPLE: {
+		struct dax_simple_wire_hdr *whdr;
+		struct dax_simple_wire_ext *wext;
+		uint32_t n_extents = log_fmap->fmap_nextents;
+		size_t blob_size = sizeof(*whdr) +
+				   n_extents * sizeof(*wext);
 
-		cursor += ext_list_size;
-		if (cursor > msg_size)
-			goto err_out;
+		if (blob_size > msg_size)
+			return -EINVAL;
 
-		flh->nextents = log_fmap->fmap_nextents;
+		whdr = (struct dax_simple_wire_hdr *)msg;
+		whdr->file_size = fmeta->fm_size;
+		whdr->n_extents = n_extents;
+		whdr->reserved = 0;
+		cursor += sizeof(*whdr);
 
-		memset(se, 0, ext_list_size);
-		for (i = 0; i < flh->nextents; i++) {
-			memset(&se[i], 0, sizeof(se[i]));
-			se[i].se_devindex = log_fmap->se[i].se_devindex;
-			se[i].se_offset = log_fmap->se[i].se_offset;
-			se[i].se_len = log_fmap->se[i].se_len;
+		wext = (struct dax_simple_wire_ext *)&msg[cursor];
+		for (i = 0; i < n_extents; i++) {
+			memset(&wext[i], 0, sizeof(wext[i]));
+			wext[i].dev_index = log_fmap->se[i].se_devindex;
+			wext[i].offset = log_fmap->se[i].se_offset;
+			wext[i].len = log_fmap->se[i].se_len;
 		}
+		cursor += n_extents * sizeof(*wext);
 
+		if (meta_size_out)
+			*meta_size_out = DAX_SIMPLE_META_SIZE(n_extents);
 		break;
 	}
 	case FAMFS_EXT_INTERLEAVE: {
-		struct fuse_famfs_iext *ie = (struct fuse_famfs_iext *)&msg[cursor];
-		struct fmap_simple_ext *se;
+		struct dax_ileave_wire_hdr *whdr;
+		uint32_t n_iexts = log_fmap->fmap_niext;
+		uint32_t total_strips = 0;
 
-		/* There can be more than one interleaved extent */
-		for (i = 0; i < log_fmap->fmap_niext; i++) {
-			cursor += sizeof(*ie);
+		if (sizeof(*whdr) > msg_size)
+			return -EINVAL;
+
+		whdr = (struct dax_ileave_wire_hdr *)msg;
+		whdr->file_size = fmeta->fm_size;
+		whdr->n_iexts = n_iexts;
+		whdr->reserved = 0;
+		cursor += sizeof(*whdr);
+
+		for (i = 0; i < n_iexts; i++) {
+			struct dax_ileave_wire_iext *wiext;
+			struct dax_ileave_wire_strip *wstrip;
+			uint32_t nstrips = log_fmap->ie[i].ie_nstrips;
+
+			cursor += sizeof(*wiext);
 			if (cursor > msg_size)
-				goto err_out;
+				return -EINVAL;
 
-			/* Interleaved extent header into msg */
-			memset(ie, 0, sizeof(*ie));
+			wiext = (struct dax_ileave_wire_iext *)
+				&msg[cursor - sizeof(*wiext)];
+			memset(wiext, 0, sizeof(*wiext));
+			wiext->chunk_size = log_fmap->ie[i].ie_chunk_size;
+			wiext->nstrips = nstrips;
+			wiext->nbytes = fmeta->fm_size;
 
-			ie[i].ie_nstrips = log_fmap->ie[i].ie_nstrips;
-			ie[i].ie_chunk_size = log_fmap->ie[i].ie_chunk_size;
-			ie[i].ie_nbytes = fmeta->fm_size;
-
-			printf("%s: ie[%d] nstrips=%d chunk=%d nbytes=%ld\n",
-			       __func__, i, ie[i].ie_nstrips, ie[i].ie_chunk_size,
-			       ie[i].ie_nbytes);
-			se = (struct fmap_simple_ext *)&msg[cursor];
-
-			cursor += ie[i].ie_nstrips * sizeof(*se);
+			wstrip = (struct dax_ileave_wire_strip *)&msg[cursor];
+			cursor += nstrips * sizeof(*wstrip);
 			if (cursor > msg_size)
-				goto err_out;
+				return -EINVAL;
 
-			memset(se, 0, ie[i].ie_nstrips * sizeof(*se));
+			for (j = 0; j < nstrips; j++) {
+				const struct famfs_simple_extent *strip =
+					&log_fmap->ie[i].ie_strips[j];
 
-			printf("%s: interleaved ext %d: strips=%d\n",
-			       __func__, i, ie[i].ie_nstrips);
-			/* Strip extents into msg */
-			for (j = 0; j < ie[i].ie_nstrips; j++) {
-				const struct famfs_simple_extent *strips =
-					log_fmap->ie[i].ie_strips;
-
-				se[j].se_devindex = strips[j].se_devindex;
-				se[j].se_offset   = strips[j].se_offset;
-				se[j].se_len      = strips[j].se_len;
+				memset(&wstrip[j], 0, sizeof(wstrip[j]));
+				wstrip[j].dev_index = strip->se_devindex;
+				wstrip[j].offset = strip->se_offset;
+				wstrip[j].len = strip->se_len;
 			}
+			total_strips += nstrips;
 		}
+
+		if (meta_size_out)
+			*meta_size_out = DAX_ILEAVE_META_SIZE(n_iexts,
+							      total_strips);
 		break;
 	}
 	default:
@@ -298,9 +296,6 @@ famfs_log_file_meta_to_msg(
 	}
 
 	return cursor;
-
-err_out:
-	return -EINVAL;
 }
 
 /*

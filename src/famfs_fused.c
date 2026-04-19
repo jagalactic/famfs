@@ -219,13 +219,15 @@ static void famfs_init(
 		famfs_log(FAMFS_LOG_NOTICE, "%s: Kernel is passthrough-capable\n",
 			 __func__);
 
-	if (conn->capable_ext & FUSE_CAP_DAX_FMAP) {
+	if (conn->capable_ext & FUSE_CAP_IOMAP) {
 		famfs_log(FAMFS_LOG_NOTICE,  "%s: Kernel is DAX_IOMAP-capable\n",
 			 __func__);
 		if (lo->daxdev) {
 			famfs_log(FAMFS_LOG_NOTICE,
 				 "%s: ENABLING DAX_IOMAP\n", __func__);
-			conn->want_ext |= FUSE_CAP_DAX_FMAP;
+			conn->want_ext |= FUSE_CAP_IOMAP;
+			strncpy(conn->dax_fmap_ops_name, "dax_simple",
+				sizeof(conn->dax_fmap_ops_name) - 1);
 		} else {
 			famfs_log(FAMFS_LOG_NOTICE,
 				 "%s: disabling DAX_IOMAP (no daxdev)\n",
@@ -603,7 +605,9 @@ famfs_get_fmap(
 	struct famfs_ctx *lo = famfs_ctx_from_req(req);
 	ssize_t fmap_bufsize = FMAP_MSG_MAX;
 	struct famfs_inode *inode = NULL;
+	struct fuse_get_fmap_out *hdr;
 	char *fmap_message = NULL;
+	uint32_t meta_size = 0;
 	ssize_t fmap_size;
 	int err = 0;
 	(void)size;
@@ -614,9 +618,6 @@ famfs_get_fmap(
 		goto out_err;
 	}
 
-	/* The nodeid is the address of the famfs_inode. Retrieving it
-	 * this way validates that there is indeed an inode at that address.
-	 */
 	inode = famfs_get_inode_from_nodeid(&lo->icache, nodeid);
 
 	if (!inode) {
@@ -632,12 +633,12 @@ famfs_get_fmap(
 		goto out_err;
 	}
 
-	/* XXX: FUSE_FAMFS_FILE_REG - mark sb and log correctly */
-	fmap_size = famfs_log_file_meta_to_msg(fmap_message, fmap_bufsize,
-					       FUSE_FAMFS_FILE_REG,
-					       inode->fmeta);
+	hdr = (struct fuse_get_fmap_out *)fmap_message;
+	fmap_size = famfs_log_file_meta_to_msg(
+			fmap_message + sizeof(*hdr),
+			fmap_bufsize - sizeof(*hdr),
+			0, inode->fmeta, &meta_size);
 	if (fmap_size <= 0) {
-		/* Send reply without fmap */
 		famfs_log(FAMFS_LOG_ERR,
 			  "%s: %ld error putting fmap in message\n",
 			 __func__, fmap_size);
@@ -645,7 +646,11 @@ famfs_get_fmap(
 		goto out_err;
 	}
 
-	err = fuse_reply_buf(req, fmap_message, fmap_size /* FMAP_MSG_MAX */);
+	hdr->meta_size = meta_size;
+	hdr->reserved = 0;
+	fmap_size += sizeof(*hdr);
+
+	err = fuse_reply_buf(req, fmap_message, fmap_size);
 	if (err)
 		famfs_log(FAMFS_LOG_ERR, "%s: fuse_reply_buf returned err %d\n",
 			 __func__, err);
@@ -668,10 +673,10 @@ out_err:
 static void
 famfs_get_daxdev(
 	fuse_req_t req,
-	int daxdev_index)
+	uint32_t daxdev_index)
 {
 	struct famfs_ctx *fd = famfs_ctx_from_req(req);
-	struct fuse_daxdev_out daxdev;
+	struct fuse_get_daxdev_out daxdev;
 	int err = 0;
 
 	famfs_log(FAMFS_LOG_NOTICE, "%s: daxdev_index=%d\n",
