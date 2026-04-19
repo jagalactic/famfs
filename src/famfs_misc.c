@@ -455,7 +455,7 @@ bool famfs_daxmode_required(void)
 	int major, minor;
 
 	if (famfs_get_kernel_version(&major, &minor) < 0)
-		return false; /* On error, assume not required */
+		return false;
 
 	if (major > 6)
 		return true;
