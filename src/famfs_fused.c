@@ -226,7 +226,7 @@ static void famfs_init(
 			famfs_log(FAMFS_LOG_NOTICE,
 				 "%s: ENABLING DAX_IOMAP\n", __func__);
 			conn->want_ext |= FUSE_CAP_IOMAP;
-			strncpy(conn->dax_fmap_ops_name, "dax_simple",
+			strncpy(conn->dax_fmap_ops_name, "dax_simple_ops",
 				sizeof(conn->dax_fmap_ops_name) - 1);
 		} else {
 			famfs_log(FAMFS_LOG_NOTICE,
