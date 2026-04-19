@@ -2,6 +2,14 @@
 
 Three repos must be built: linux kernel, libfuse, and famfs.
 
+## Current Branches (--after / BPF struct_ops testing)
+
+| Repo | Path | Branch |
+|------|------|--------|
+| linux | `/home/gourry/git/linux` | `famfs_hax` |
+| libfuse | `/home/gourry/git/libfuse` | `famfs_hacks` |
+| famfs | `/home/gourry/git/famfs` | `famfs_hacks` |
+
 ## Prerequisites
 
 - gcc, make, flex, bison, libelf-dev (kernel build)
@@ -12,38 +20,39 @@ Three repos must be built: linux kernel, libfuse, and famfs.
 - fio (stress testing)
 - virtme-ng (`vng`) for VM testing with QEMU NVDIMM
 
-## 1. Linux Kernel
+## 1. Linux Kernel (`/home/gourry/git/linux`)
 
 ```bash
 cd /home/gourry/git/linux
+git checkout famfs_hax
 
 # Ensure required configs are set:
 #   CONFIG_FUSE_FS=y
-#   CONFIG_FUSE_DAX_FMAP=y (or CONFIG_FUSE_FAMFS_DAX=y on pre-rename branches)
-#   CONFIG_FUSE_DAX_FMAP_BPF=y (--after mode)
+#   CONFIG_FUSE_DAX_FMAP=y
+#   CONFIG_FUSE_DAX_FMAP_BPF=y
 #   CONFIG_DEV_DAX=y
 #   CONFIG_DEV_DAX_FSDEV=y
 
-# Fix CRLF if present in Kconfig (known issue on some branches)
+# Fix CRLF if present in Kconfig (known issue on famfs_hax branch)
 sed -i 's/\r$//' drivers/dax/Kconfig
 
 make -j$(nproc)
 ```
 
-### Branches
+### Branch: `famfs_hax` (tip `cbb83e2040db`)
 
-- `famfs_hax`: post-BPF kernel with struct_ops, GET_FMAP/GET_DAXDEV opcodes,
-  ops_name INIT negotiation. Use for --after testing.
-- `mm-unstable` at `7557a50adf6c` (5 commits back from tip): pre-BPF with
-  native kernel extent parsing. Use for --before testing. Requires reverting
-  the 5 BPF/rename commits on top.
+BPF struct_ops, GET_FMAP/GET_DAXDEV opcodes, ops_name INIT negotiation,
+rewritten fuse_dax_fmap.c for the new protocol.
 
-## 2. libfuse
+## 2. libfuse (`/home/gourry/git/libfuse`)
 
 libfuse is built out-of-tree into the famfs debug directory. The famfs repo
 has a `libfuse` symlink pointing to `/home/gourry/git/libfuse`.
 
 ```bash
+cd /home/gourry/git/libfuse
+git checkout famfs_hacks
+
 cd /home/gourry/git/famfs/debug/libfuse
 
 # Full reconfigure (needed after branch switch)
@@ -55,26 +64,15 @@ ninja lib/libfuse3.so.3.18.0
 
 The library is installed at `debug/libfuse/lib/libfuse3.so.4`.
 
-### Branches
+### Branch: `famfs_hacks` (tip `d0f6b23`)
 
-- `famfs_hacks`: post-BPF libfuse with `FUSE_CAP_IOMAP`, ops_name in INIT,
-  GET_FMAP/GET_DAXDEV dispatch. Use for --after testing.
-- `jagalactic/famfs` (`b0e27bd`): pre-BPF libfuse with `FUSE_CAP_DAX_FMAP`
-  naming. Use for --before testing.
+Has `FUSE_CAP_IOMAP`, ops_name in INIT, GET_FMAP/GET_DAXDEV dispatch.
 
-### ABI note
-
-The UAPI protocol bit (`FUSE_DAX_FMAP`, bit 43) is the same across both
-branches. libfuse maps it to different capability bits:
-- `famfs_hacks`: `FUSE_CAP_IOMAP` (bit 32)
-- `jagalactic/famfs`: `FUSE_CAP_DAX_FMAP` (bit 33)
-
-famfs must be built against the matching libfuse branch.
-
-## 3. famfs
+## 3. famfs (`/home/gourry/git/famfs`)
 
 ```bash
 cd /home/gourry/git/famfs
+git checkout famfs_hacks
 
 # Clean reconfigure
 rm -rf debug/CMakeCache.txt debug/CMakeFiles
@@ -90,12 +88,9 @@ Produces:
 - `debug/mkfs.famfs` — mkfs (does not link libfuse, execs famfs_fused internally)
 - `debug/famfs_fused` — FUSE daemon (links libfuse3.so via RUNPATH)
 
-### Branches
+### Branch: `famfs_hacks` (tip `df45a8c`)
 
-- `famfs_hacks`: post-BPF famfs with BPF wire format, ops_name negotiation.
-  Use for --after testing.
-- `4034a1f`: pre-BPF famfs with native GET_FMAP serialization,
-  `FUSE_CAP_DAX_FMAP` naming. Use for --before testing.
+BPF wire format (`dax_fmap_wire.h`), ops_name negotiation, `FUSE_CAP_IOMAP`.
 
 ## 4. BPF Programs (--after mode only)
 
@@ -107,8 +102,8 @@ clang -O2 -g -target bpf \
 ```
 
 The BPF .o must be compiled against the same kernel headers it will run on.
-Callback names in the struct_ops must match the kernel's `fuse_dax_fmap_ops`
-struct (e.g., `dax_fmap_parse`/`iomap_begin` on famfs_hax).
+On the `famfs_hax` kernel, the `fuse_dax_fmap_ops` struct uses callback
+names `dax_fmap_parse` and `iomap_begin`.
 
 ## 5. Running Tests in VM
 
