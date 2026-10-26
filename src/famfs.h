@@ -7,6 +7,7 @@
 
 #ifndef __KERNEL__
 /* Typedefs for user space */
+#include <linux/types.h>
 typedef __u64 u64;
 typedef __s64 s64;
 typedef __u32 u32;
